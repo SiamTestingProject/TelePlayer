@@ -38,14 +38,17 @@ Install Flutter 3.44.8 or newer, then run:
 ```bash
 flutter create --platforms=android,windows --project-name telegram_media_player .
 flutter pub get
-python3 tool/patch_tdlib_android_namespace.py
+python3 tool/patch_tdlib_android_namespace.py --compile-sdk 36
 flutter analyze
 flutter test
 flutter run
 ```
 
 On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project.
-The namespace patch is only needed for Android builds that use the current `tdlib` package with newer Android Gradle Plugin versions.
+The TDLib compatibility patch adds its required Android namespace and raises the
+plugin's `compileSdk` from API 31 to API 36. This is required because current
+AndroidX dependencies need API 34 or newer even though `tdlib` 1.6.0 still
+declares API 31.
 
 ## Release
 

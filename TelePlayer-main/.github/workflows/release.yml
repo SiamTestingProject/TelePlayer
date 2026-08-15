@@ -16,6 +16,7 @@ permissions:
 env:
   APP_NAME: TelegramMediaPlayer
   FLUTTER_VERSION: "3.44.8"
+  ANDROID_COMPILE_SDK: "36"
 
 jobs:
   android:
@@ -75,8 +76,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Patch tdlib Android namespace
-        run: python3 tool/patch_tdlib_android_namespace.py
+      - name: Validate tdlib Android compatibility patch
+        run: python3 -m unittest tool/test_patch_tdlib_android.py
+
+      - name: Patch tdlib Android build configuration
+        run: python3 tool/patch_tdlib_android_namespace.py --compile-sdk "$ANDROID_COMPILE_SDK"
 
       - name: Run static analysis
         run: flutter analyze --fatal-infos
