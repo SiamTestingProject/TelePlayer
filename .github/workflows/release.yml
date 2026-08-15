@@ -75,6 +75,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch tdlib Android namespace
+        run: python3 tool/patch_tdlib_android_namespace.py
+
       - name: Run static analysis
         run: flutter analyze --fatal-infos
 

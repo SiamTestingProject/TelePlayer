@@ -38,12 +38,14 @@ Install Flutter 3.44.8 or newer, then run:
 ```bash
 flutter create --platforms=android,windows --project-name telegram_media_player .
 flutter pub get
+python3 tool/patch_tdlib_android_namespace.py
 flutter analyze
 flutter test
 flutter run
 ```
 
 On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project.
+The namespace patch is only needed for Android builds that use the current `tdlib` package with newer Android Gradle Plugin versions.
 
 ## Release
 
