@@ -1,0 +1,132 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:telegram_media_player/src/app/app.dart';
+import 'package:telegram_media_player/src/app/app_scope.dart';
+import 'package:telegram_media_player/src/core/services/local_streaming_server.dart';
+import 'package:telegram_media_player/src/core/services/secure_config_store.dart';
+import 'package:telegram_media_player/src/features/auth/application/auth_controller.dart';
+import 'package:telegram_media_player/src/features/auth/data/auth_repository.dart';
+import 'package:telegram_media_player/src/features/auth/models/auth_models.dart';
+import 'package:telegram_media_player/src/features/library/application/media_library_controller.dart';
+import 'package:telegram_media_player/src/features/library/data/media_repository.dart';
+import 'package:telegram_media_player/src/features/library/models/media_item.dart';
+import 'package:telegram_media_player/src/features/player/application/player_controller.dart';
+import 'package:telegram_media_player/src/features/settings/application/settings_controller.dart';
+import 'package:telegram_media_player/src/features/settings/data/settings_repository.dart';
+import 'package:telegram_media_player/src/features/settings/models/app_settings.dart';
+import 'package:telegram_media_player/src/infrastructure/telegram/telegram_client.dart';
+
+void main() {
+  testWidgets('shows the authentication entry screen', (tester) async {
+    final telegramClient = _FakeTelegramClient();
+    final settingsController = SettingsController(_FakeSettingsRepository());
+    final authController = AuthController(
+      repository: AuthRepository(telegramClient),
+      settingsController: settingsController,
+    );
+    final libraryController = MediaLibraryController(
+      repository: _FakeMediaRepository(telegramClient),
+      settingsController: settingsController,
+    );
+    final playerController = PlayerController(libraryController);
+
+    addTearDown(() async {
+      playerController.dispose();
+      libraryController.dispose();
+      authController.dispose();
+      settingsController.dispose();
+      await telegramClient.close();
+    });
+
+    await tester.pumpWidget(
+      AppScope(
+        authController: authController,
+        libraryController: libraryController,
+        playerController: playerController,
+        settingsController: settingsController,
+        child: const TelegramMediaPlayerApp(),
+      ),
+    );
+
+    expect(find.text('Telegram Media Player'), findsOneWidget);
+    expect(find.text('Sign in to Telegram'), findsOneWidget);
+    expect(find.byIcon(Icons.settings_outlined), findsWidgets);
+  });
+}
+
+class _FakeSettingsRepository extends SettingsRepository {
+  _FakeSettingsRepository() : super(SecureConfigStore());
+
+  @override
+  Future<AppSettings> load() => Future<AppSettings>.value(AppSettings.empty());
+
+  @override
+  Future<void> save(AppSettings settings) => Future<void>.value();
+}
+
+class _FakeMediaRepository extends MediaRepository {
+  _FakeMediaRepository(TelegramClient telegramClient)
+      : super(
+          telegramClient: telegramClient,
+          streamingServer: LocalStreamingServer(telegramClient),
+        );
+
+  @override
+  Future<List<MediaItem>> loadRecent(AppSettings settings) {
+    return Future<List<MediaItem>>.value(const <MediaItem>[]);
+  }
+
+  @override
+  Future<Uri> streamUriFor(MediaItem item) {
+    return Future<Uri>.value(Uri.parse('http://127.0.0.1:0/media'));
+  }
+}
+
+class _FakeTelegramClient implements TelegramClient {
+  final _authSteps = StreamController<AuthStep>.broadcast();
+
+  @override
+  Stream<AuthStep> get authSteps => _authSteps.stream;
+
+  @override
+  Future<void> initialize(AppSettings settings) => Future<void>.value();
+
+  @override
+  Future<void> submitPhoneNumber(String phoneNumber) => Future<void>.value();
+
+  @override
+  Future<void> submitCode(String code) => Future<void>.value();
+
+  @override
+  Future<void> submitPassword(String password) => Future<void>.value();
+
+  @override
+  Future<List<MediaItem>> listRecentMedia({
+    required List<int> channelIds,
+    required int limitPerChannel,
+  }) =>
+      Future<List<MediaItem>>.value(const <MediaItem>[]);
+
+  @override
+  Future<MediaItem> refreshMedia(MediaItem item) {
+    return Future<MediaItem>.value(item);
+  }
+
+  @override
+  Future<Uint8List> readFileRange(MediaItem item, int start, int end) {
+    return Future<Uint8List>.value(Uint8List(0));
+  }
+
+  @override
+  Future<Uint8List?> loadThumbnail(MediaItem item) {
+    return Future<Uint8List?>.value();
+  }
+
+  @override
+  Future<void> close() async {
+    await _authSteps.close();
+  }
+}
