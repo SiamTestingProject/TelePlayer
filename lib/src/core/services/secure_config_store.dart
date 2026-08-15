@@ -4,10 +4,7 @@ import '../../features/settings/models/app_settings.dart';
 
 class SecureConfigStore {
   SecureConfigStore({FlutterSecureStorage? storage})
-      : _storage = storage ??
-            const FlutterSecureStorage(
-              aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            );
+      : _storage = storage ?? const FlutterSecureStorage();
 
   static const _apiIdKey = 'telegram_api_id';
   static const _apiHashKey = 'telegram_api_hash';

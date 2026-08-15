@@ -45,6 +45,9 @@ jobs:
       - name: Prepare Android host project
         run: flutter create --platforms=android --project-name telegram_media_player .
 
+      - name: Restore checked-in Dart sources
+        run: git checkout -- lib test pubspec.yaml analysis_options.yaml
+
       - name: Configure Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -157,6 +160,9 @@ jobs:
 
       - name: Prepare Windows host project
         run: flutter create --platforms=windows --project-name telegram_media_player .
+
+      - name: Restore checked-in Dart sources
+        run: git checkout -- lib test pubspec.yaml analysis_options.yaml
 
       - name: Install dependencies
         run: flutter pub get
