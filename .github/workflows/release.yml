@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: TelegramMediaPlayer
+  FLUTTER_VERSION: "3.44.8"
+
+jobs:
+  android:
+    name: Build Android artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Prepare Android host project
+        run: flutter create --platforms=android --project-name telegram_media_player .
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
+            echo "No Android signing secrets configured; building with Flutter's default release signing."
+            exit 0
+          fi
+          test -n "${ANDROID_KEY_ALIAS:-}" || { echo "ANDROID_KEY_ALIAS is required when ANDROID_KEYSTORE_BASE64 is set"; exit 1; }
+          test -n "${ANDROID_KEY_PASSWORD:-}" || { echo "ANDROID_KEY_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set"; exit 1; }
+          test -n "${ANDROID_STORE_PASSWORD:-}" || { echo "ANDROID_STORE_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set"; exit 1; }
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+          python3 tool/configure_android_signing.py
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run static analysis
+        run: flutter analyze --fatal-infos
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      - name: Build ABI APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release
+
+      - name: Rename artifacts
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          mkdir -p dist
+          test -f build/app/outputs/flutter-apk/app-release.apk || { echo "Universal APK missing"; exit 1; }
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/${APP_NAME}-${TAG}.apk"
+          if [[ -f build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ]]; then
+            cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "dist/${APP_NAME}-${TAG}-arm64.apk"
+          else
+            echo "ARM64 APK missing"; exit 1
+          fi
+          if [[ -f build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ]]; then
+            cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/${APP_NAME}-${TAG}-armeabi-v7a.apk"
+          fi
+          if [[ -f build/app/outputs/flutter-apk/app-x86_64-release.apk ]]; then
+            cp build/app/outputs/flutter-apk/app-x86_64-release.apk "dist/${APP_NAME}-${TAG}-x86_64.apk"
+          fi
+          test -f build/app/outputs/bundle/release/app-release.aab || { echo "AAB missing"; exit 1; }
+          cp build/app/outputs/bundle/release/app-release.aab "dist/${APP_NAME}-${TAG}-aab.aab"
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+          ls -lh dist
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ env.APP_NAME }} ${{ github.ref_name }}
+          files: dist/*
+          fail_on_unmatched_files: true
+
+  windows:
+    name: Build Windows artifact
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Prepare Windows host project
+        run: flutter create --platforms=windows --project-name telegram_media_player .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run static analysis
+        run: flutter analyze --fatal-infos
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Bundle optional TDLib DLL
+        shell: pwsh
+        env:
+          TDJSON_WINDOWS_DLL_BASE64: ${{ secrets.TDJSON_WINDOWS_DLL_BASE64 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = 'build/windows/x64/runner/Release'
+          if (-not (Test-Path $releaseDir)) {
+            throw "Windows release directory missing"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TDJSON_WINDOWS_DLL_BASE64)) {
+            Write-Host "TDJSON_WINDOWS_DLL_BASE64 is not configured; tdjson.dll can be placed next to the executable or configured in app settings."
+            exit 0
+          }
+          $dllPath = Join-Path $releaseDir 'tdjson.dll'
+          [IO.File]::WriteAllBytes($dllPath, [Convert]::FromBase64String($env:TDJSON_WINDOWS_DLL_BASE64))
+          if (-not (Test-Path $dllPath)) {
+            throw "tdjson.dll was not written"
+          }
+
+      - name: Rename Windows artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = '${{ github.ref_name }}'
+          $releaseDir = 'build/windows/x64/runner/Release'
+          $exePath = Join-Path $releaseDir 'telegram_media_player.exe'
+          $artifactPath = "dist/${{ env.APP_NAME }}-$tag-windows-x64.zip"
+          if (-not (Test-Path $exePath)) {
+            throw "Windows executable missing"
+          }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $artifactPath -Force
+          if (-not (Test-Path $artifactPath)) {
+            throw "Windows ZIP missing"
+          }
+          Get-ChildItem dist
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ env.APP_NAME }} ${{ github.ref_name }}
+          files: dist/*
+          fail_on_unmatched_files: true
