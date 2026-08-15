@@ -47,11 +47,13 @@ On Windows desktop, run `flutter config --enable-windows-desktop` before creatin
 
 ## Release
 
-Create a tag such as `v1.0.0` and push it. GitHub Actions will build and upload release artifacts named like:
+Every branch push runs GitHub Actions for Android and Windows, then stores compiled outputs as workflow artifacts.
+
+Create a tag such as `v1.0.0` and push it to publish a GitHub Release. GitHub Actions will build and upload release artifacts named like:
 
 - `TelegramMediaPlayer-v1.0.0.apk`
 - `TelegramMediaPlayer-v1.0.0-arm64.apk`
 - `TelegramMediaPlayer-v1.0.0-aab.aab`
 - `TelegramMediaPlayer-v1.0.0-windows-x64.zip`
 
-The workflow fails on dependency install, analysis, tests, Android or Windows build, artifact rename, packaging, or release upload errors.
+The workflow can also be started manually from the GitHub Actions tab. It fails on dependency install, analysis, tests, Android or Windows build, artifact rename, packaging, workflow artifact upload, or release upload errors.
