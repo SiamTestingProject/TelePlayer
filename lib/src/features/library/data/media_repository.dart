@@ -167,7 +167,8 @@ class MediaRepository {
       return null;
     }
     try {
-      return await client.loadTechnicalMetadata(item);
+      return await (client as AudioTechnicalMetadataProvider)
+          .loadTechnicalMetadata(item);
     } on AppException catch (error) {
       if (!_isRecoverableThumbnailFailure(error)) {
         rethrow;
@@ -243,7 +244,8 @@ class MediaRepository {
         return null;
       }
       try {
-        final embedded = await client.loadEmbeddedArtwork(currentItem);
+        final embedded = await (client as EmbeddedArtworkProvider)
+            .loadEmbeddedArtwork(currentItem);
         if (embedded != null && embedded.isNotEmpty) {
           embeddedArtwork = embedded;
         }
