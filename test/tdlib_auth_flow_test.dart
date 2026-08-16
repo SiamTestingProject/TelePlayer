@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tdlib/td_api.dart' as td;
 import 'package:telegram_media_player/src/core/errors/app_exception.dart';
 import 'package:telegram_media_player/src/features/auth/models/auth_models.dart';
+import 'package:telegram_media_player/src/features/library/models/media_item.dart';
 import 'package:telegram_media_player/src/features/settings/models/app_settings.dart';
 import 'package:telegram_media_player/src/infrastructure/telegram/tdlib_gateway.dart';
 import 'package:telegram_media_player/src/infrastructure/telegram/tdlib_telegram_client.dart';
@@ -36,6 +37,37 @@ void main() {
     expect(json['@type'], 'ok');
     expect(json['@extra'], 'request-42');
     expect(json['@client_id'], 7);
+  });
+
+  test('does not label chat history lookup failures as deleted messages', () {
+    final historyError = telegramExceptionForResponse(
+      <String, dynamic>{
+        '@type': 'error',
+        'code': 404,
+        'message': 'Not Found',
+      },
+      requestType: 'getChatHistory',
+    );
+    final messageError = telegramExceptionForResponse(
+      <String, dynamic>{
+        '@type': 'error',
+        'code': 404,
+        'message': 'Message not found',
+      },
+      requestType: 'getMessage',
+    );
+    final completedChatLoad = telegramExceptionForResponse(
+      <String, dynamic>{
+        '@type': 'error',
+        'code': 404,
+        'message': 'Not Found',
+      },
+      requestType: 'loadChats',
+    );
+
+    expect(historyError?.code, AppErrorCode.privateChannel);
+    expect(messageError?.code, AppErrorCode.deletedMessage);
+    expect(completedChatLoad, isNull);
   });
 
   test('initialization requests and advances the TDLib authorization state', () async {
@@ -102,7 +134,7 @@ void main() {
       await client.close();
     });
 
-    await client.submitPhoneNumber('+8801620262057');
+    await client.submitPhoneNumber('+15551234567');
 
     expect(
       gateway.requestTypes,
@@ -126,7 +158,7 @@ void main() {
     addTearDown(client.close);
 
     await expectLater(
-      client.submitPhoneNumber('+8801620262057'),
+      client.submitPhoneNumber('+15551234567'),
       throwsA(
         isA<AppException>()
             .having(
@@ -142,6 +174,81 @@ void main() {
       ),
     );
   });
+
+  test('loads an unknown channel and includes Telegram audio posts', () async {
+    var chatsLoaded = false;
+    final gateway = _FakeTdlibGateway(
+      requestHandler: (request) {
+        switch (request.getConstructor()) {
+          case 'getChat':
+            if (!chatsLoaded) {
+              throw const AppException(
+                AppErrorCode.privateChannel,
+                message: 'Chat not found',
+              );
+            }
+            return <String, dynamic>{
+              '@type': 'chat',
+              'id': -1001234567890,
+              'title': 'My Music Collection',
+            };
+          case 'loadChats':
+            chatsLoaded = true;
+            return <String, dynamic>{'@type': 'ok'};
+          case 'getChatHistory':
+            return <String, dynamic>{
+              '@type': 'messages',
+              'messages': <Object?>[
+                <String, dynamic>{
+                  '@type': 'message',
+                  'id': 552,
+                  'content': <String, dynamic>{
+                    '@type': 'messageAudio',
+                    'audio': <String, dynamic>{
+                      '@type': 'audio',
+                      'duration': 262,
+                      'title': 'Example Track',
+                      'performer': 'Example Artist',
+                      'file_name': 'Example Track.mp3',
+                      'mime_type': 'audio/mpeg',
+                      'album_cover_thumbnail': <String, dynamic>{
+                        'file': <String, dynamic>{'id': 88},
+                      },
+                      'audio': <String, dynamic>{
+                        '@type': 'file',
+                        'id': 77,
+                        'size': 32600000,
+                        'local': <String, dynamic>{'path': ''},
+                      },
+                    },
+                  },
+                },
+              ],
+            };
+          default:
+            return <String, dynamic>{'@type': 'ok'};
+        }
+      },
+    );
+    final client = TdlibTelegramClient(gateway);
+
+    addTearDown(client.close);
+
+    final items = await client.listRecentMedia(
+      channelIds: const <int>[-1001234567890],
+      limitPerChannel: 60,
+    );
+
+    expect(
+      gateway.requestTypes,
+      <String>['getChat', 'loadChats', 'getChat', 'getChatHistory'],
+    );
+    expect(items, hasLength(1));
+    expect(items.single.kind, MediaKind.audio);
+    expect(items.single.title, 'Example Track');
+    expect(items.single.fileId, 77);
+    expect(items.single.thumbnailFileId, 88);
+  });
 }
 
 const _configuredSettings = AppSettings(
@@ -156,6 +263,7 @@ class _FakeTdlibGateway extends TdlibGateway {
   _FakeTdlibGateway({
     List<Map<String, dynamic>>? authorizationStates,
     this.requestError,
+    this.requestHandler,
   })
       : _authorizationStates = authorizationStates ??
             <Map<String, dynamic>>[
@@ -171,6 +279,8 @@ class _FakeTdlibGateway extends TdlibGateway {
   final requestTypes = <String>[];
   final List<Map<String, dynamic>> _authorizationStates;
   final AppException? requestError;
+  final FutureOr<Map<String, dynamic>> Function(td.TdFunction request)?
+      requestHandler;
 
   bool _initialized = false;
 
@@ -200,6 +310,10 @@ class _FakeTdlibGateway extends TdlibGateway {
         return _authorizationStates.removeAt(0);
       }
       return _authorizationStates.single;
+    }
+    final handler = requestHandler;
+    if (handler != null) {
+      return handler(request);
     }
     return <String, dynamic>{'@type': 'ok'};
   }

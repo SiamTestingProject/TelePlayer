@@ -18,4 +18,10 @@ void main() {
     expect(FileNameUtils.isSupportedVideoName('clip.webm'), isTrue);
     expect(FileNameUtils.isSupportedVideoName('archive.zip'), isFalse);
   });
+
+  test('recognizes Telegram audio file names', () {
+    expect(FileNameUtils.isSupportedAudioName('Example Track.mp3'), isTrue);
+    expect(FileNameUtils.isSupportedAudioName('lossless.FLAC'), isTrue);
+    expect(FileNameUtils.isSupportedAudioName('cover.jpg'), isFalse);
+  });
 }

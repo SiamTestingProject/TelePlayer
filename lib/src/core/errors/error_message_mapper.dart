@@ -54,14 +54,16 @@ class ErrorMessageMapper {
           body: 'The media file attached to this message is no longer available.',
         );
       case AppErrorCode.privateChannel:
-        return const FriendlyError(
-          title: 'Channel is private',
-          body: 'You do not have access to this channel, or the session lost permission.',
+        return FriendlyError(
+          title: 'Channel could not be loaded',
+          body: appError.message ??
+              'Check that this Telegram account has joined the channel and that its numeric ID is correct.',
+          actionLabel: 'Retry',
         );
       case AppErrorCode.invalidMedia:
         return const FriendlyError(
           title: 'Invalid media',
-          body: 'This item does not contain a playable video or document.',
+          body: 'This item does not contain a playable video, audio file, or document.',
         );
       case AppErrorCode.unsupportedCodec:
         return const FriendlyError(

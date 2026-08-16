@@ -146,6 +146,7 @@ class TdlibTelegramClient implements TelegramClient {
     required List<int> channelIds,
     required int limitPerChannel,
   }) async {
+    await _ensureChatsAvailable(channelIds);
     final items = <MediaItem>[];
     for (final chatId in channelIds) {
       final response = await _gateway.send(
@@ -168,6 +169,54 @@ class TdlibTelegramClient implements TelegramClient {
       }
     }
     return _mergeSplitParts(items);
+  }
+
+  Future<void> _ensureChatsAvailable(List<int> channelIds) async {
+    final unresolved = channelIds.toSet();
+    await _removeAvailableChats(unresolved);
+    if (unresolved.isEmpty) {
+      return;
+    }
+
+    const chatLists = <td.ChatList?>[
+      null,
+      td.ChatListArchive(),
+    ];
+    for (final chatList in chatLists) {
+      for (var batch = 0; batch < 20 && unresolved.isNotEmpty; batch++) {
+        final response = await _gateway.send(
+          td.LoadChats(chatList: chatList, limit: 100),
+        );
+        await _removeAvailableChats(unresolved);
+        if (response['@type'] == 'error') {
+          break;
+        }
+      }
+      if (unresolved.isEmpty) {
+        return;
+      }
+    }
+
+    final formattedIds = unresolved.join(', ');
+    throw AppException(
+      AppErrorCode.privateChannel,
+      message: 'Telegram could not find channel ID $formattedIds for this '
+          'account. Confirm that the signed-in account has joined the channel '
+          'and that the numeric ID is correct.',
+    );
+  }
+
+  Future<void> _removeAvailableChats(Set<int> unresolved) async {
+    for (final chatId in unresolved.toList(growable: false)) {
+      try {
+        await _gateway.send(td.GetChat(chatId: chatId));
+        unresolved.remove(chatId);
+      } on AppException catch (error) {
+        if (error.code != AppErrorCode.privateChannel) {
+          rethrow;
+        }
+      }
+    }
   }
 
   @override
@@ -367,7 +416,7 @@ class TdlibTelegramClient implements TelegramClient {
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.0.1',
+        applicationVersion: '1.1.2',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -401,30 +450,44 @@ class TdlibTelegramClient implements TelegramClient {
     }
     final contentMap = Map<String, dynamic>.from(content);
     final contentType = contentMap['@type']?.toString();
-    Map<String, dynamic>? media;
-    MediaKind kind;
+    final Map<String, dynamic>? media;
+    final MediaKind initialKind;
     if (contentType == 'messageVideo') {
       media = _asMap(contentMap['video']);
-      kind = MediaKind.video;
+      initialKind = MediaKind.video;
+    } else if (contentType == 'messageAudio') {
+      media = _asMap(contentMap['audio']);
+      initialKind = MediaKind.audio;
     } else if (contentType == 'messageDocument') {
       media = _asMap(contentMap['document']);
-      kind = MediaKind.document;
+      initialKind = MediaKind.document;
     } else {
       return null;
     }
     if (media == null) {
-      throw const AppException(AppErrorCode.deletedMedia);
+      return null;
     }
-    final file = _asMap(media['video']) ?? _asMap(media['document']);
+    final file = _asMap(media['video']) ??
+        _asMap(media['audio']) ??
+        _asMap(media['document']);
     if (file == null) {
       return null;
     }
-    final fileName = (media['file_name'] ?? 'Telegram media').toString();
-    final mimeType = (media['mime_type'] ?? 'application/octet-stream').toString();
-    if (!FileNameUtils.isSupportedVideoName(fileName) && !mimeType.startsWith('video/')) {
+    final mimeType = _mimeTypeForMedia(media, initialKind);
+    final fileName = _fileNameForMedia(media, initialKind, mimeType);
+    final isAudio = initialKind == MediaKind.audio ||
+        mimeType.startsWith('audio/') ||
+        FileNameUtils.isSupportedAudioName(fileName);
+    final isVideo = mimeType.startsWith('video/') ||
+        FileNameUtils.isSupportedVideoName(fileName);
+    if (!isAudio && !isVideo) {
       return null;
     }
+    final kind = isAudio ? MediaKind.audio : initialKind;
     final fileId = int.tryParse(file['id']?.toString() ?? '') ?? 0;
+    if (fileId <= 0) {
+      return null;
+    }
     final fileSize = int.tryParse(file['size']?.toString() ?? '') ??
         int.tryParse(file['expected_size']?.toString() ?? '') ??
         0;
@@ -435,7 +498,7 @@ class TdlibTelegramClient implements TelegramClient {
       chatId: chatId,
       messageId: int.tryParse(message['id']?.toString() ?? '') ?? 0,
       fileId: fileId,
-      title: split?.displayName ?? fileName,
+      title: _titleForMedia(media, split?.displayName ?? fileName),
       fileName: fileName,
       mimeType: mimeType,
       size: fileSize,
@@ -516,9 +579,49 @@ class TdlibTelegramClient implements TelegramClient {
   }
 
   int? _thumbnailFileId(Map<String, dynamic> media) {
-    final thumbnail = _asMap(media['thumbnail']);
+    final thumbnail = _asMap(media['thumbnail']) ??
+        _asMap(media['album_cover_thumbnail']);
     final file = _asMap(thumbnail?['file']);
     return int.tryParse(file?['id']?.toString() ?? '');
+  }
+
+  String _mimeTypeForMedia(Map<String, dynamic> media, MediaKind kind) {
+    final mimeType = media['mime_type']?.toString().trim() ?? '';
+    if (mimeType.isNotEmpty) {
+      return mimeType;
+    }
+    return kind == MediaKind.audio ? 'audio/mpeg' : 'application/octet-stream';
+  }
+
+  String _fileNameForMedia(
+    Map<String, dynamic> media,
+    MediaKind kind,
+    String mimeType,
+  ) {
+    final fileName = media['file_name']?.toString().trim() ?? '';
+    if (fileName.isNotEmpty) {
+      return fileName;
+    }
+    final title = media['title']?.toString().trim() ?? '';
+    final baseName = title.isEmpty
+        ? (kind == MediaKind.audio ? 'Telegram audio' : 'Telegram media')
+        : title;
+    final extension = switch (mimeType.toLowerCase()) {
+      'audio/mpeg' => '.mp3',
+      'audio/mp4' || 'audio/x-m4a' => '.m4a',
+      'audio/aac' => '.aac',
+      'audio/flac' => '.flac',
+      'audio/ogg' => '.ogg',
+      'audio/opus' => '.opus',
+      'audio/wav' || 'audio/x-wav' => '.wav',
+      _ => '',
+    };
+    return '$baseName$extension';
+  }
+
+  String _titleForMedia(Map<String, dynamic> media, String fallback) {
+    final title = media['title']?.toString().trim() ?? '';
+    return title.isEmpty ? fallback : title;
   }
 
   Map<String, dynamic>? _asMap(Object? value) {

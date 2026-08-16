@@ -34,6 +34,58 @@ Map<String, dynamic> tdObjectToJsonWithMetadata(TdObject object) {
   return json;
 }
 
+AppException? telegramExceptionForResponse(
+  Map<String, dynamic> response, {
+  required String requestType,
+}) {
+  if (response['@type'] != 'error') {
+    return null;
+  }
+  final message =
+      response['message']?.toString() ?? 'Telegram returned an error.';
+  final normalizedMessage = message.toLowerCase();
+  final code = int.tryParse(response['code']?.toString() ?? '');
+  if (message.toUpperCase().contains('FLOOD_WAIT')) {
+    final seconds = int.tryParse(
+      RegExp(r'\d+').firstMatch(message)?.group(0) ?? '',
+    );
+    return AppException(
+      AppErrorCode.rateLimited,
+      message: message,
+      retryAfter: seconds == null ? null : Duration(seconds: seconds),
+    );
+  }
+  if (code == 401 || normalizedMessage.contains('unauthorized')) {
+    return AppException(AppErrorCode.expiredSession, message: message);
+  }
+
+  final isChatAccessError = normalizedMessage.contains('channel_private') ||
+      normalizedMessage.contains('chat access denied') ||
+      normalizedMessage.contains('have no access to the chat');
+  if (isChatAccessError) {
+    return AppException(AppErrorCode.privateChannel, message: message);
+  }
+
+  final isNotFound = code == 404 || normalizedMessage.contains('not found');
+  if (isNotFound) {
+    // TDLib deliberately returns 404 from loadChats when that list has been
+    // exhausted. It is a completion signal, not a deleted Telegram message.
+    if (requestType == 'loadChats' && code == 404) {
+      return null;
+    }
+    if (requestType == 'getMessage' ||
+        normalizedMessage.contains('message not found')) {
+      return AppException(AppErrorCode.deletedMessage, message: message);
+    }
+    if (requestType == 'getChat' ||
+        requestType == 'getChatHistory' ||
+        normalizedMessage.contains('chat not found')) {
+      return AppException(AppErrorCode.privateChannel, message: message);
+    }
+  }
+  return AppException(AppErrorCode.telegramApi, message: message);
+}
+
 class TdlibGateway {
   final _updates = StreamController<Map<String, dynamic>>.broadcast();
   final _responses = <String, Completer<Map<String, dynamic>>>{};
@@ -96,7 +148,7 @@ class TdlibGateway {
         message: 'Telegram did not respond in time.',
       );
     });
-    _throwIfError(response);
+    _throwIfError(response, request.getConstructor());
     return response;
   }
 
@@ -172,27 +224,14 @@ class TdlibGateway {
     );
   }
 
-  void _throwIfError(Map<String, dynamic> response) {
-    if (response['@type'] != 'error') {
-      return;
+  void _throwIfError(Map<String, dynamic> response, String requestType) {
+    final exception = telegramExceptionForResponse(
+      response,
+      requestType: requestType,
+    );
+    if (exception != null) {
+      throw exception;
     }
-    final message = response['message']?.toString() ?? 'Telegram returned an error.';
-    final code = int.tryParse(response['code']?.toString() ?? '');
-    if (message.toUpperCase().contains('FLOOD_WAIT')) {
-      final seconds = int.tryParse(RegExp(r'\d+').firstMatch(message)?.group(0) ?? '');
-      throw AppException(
-        AppErrorCode.rateLimited,
-        message: message,
-        retryAfter: seconds == null ? null : Duration(seconds: seconds),
-      );
-    }
-    if (code == 401 || message.toLowerCase().contains('unauthorized')) {
-      throw AppException(AppErrorCode.expiredSession, message: message);
-    }
-    if (code == 404 || message.toLowerCase().contains('not found')) {
-      throw AppException(AppErrorCode.deletedMessage, message: message);
-    }
-    throw AppException(AppErrorCode.telegramApi, message: message);
   }
 
   Future<void> close() async {

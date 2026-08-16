@@ -17,6 +17,20 @@ class FileNameUtils {
         _splitSuffix.hasMatch(lower);
   }
 
+  static bool isSupportedAudioName(String fileName) {
+    final lower = fileName.toLowerCase();
+    return lower.endsWith('.mp3') ||
+        lower.endsWith('.m4a') ||
+        lower.endsWith('.aac') ||
+        lower.endsWith('.flac') ||
+        lower.endsWith('.wav') ||
+        lower.endsWith('.ogg') ||
+        lower.endsWith('.oga') ||
+        lower.endsWith('.opus') ||
+        lower.endsWith('.wma') ||
+        lower.endsWith('.alac');
+  }
+
   static SplitFileInfo? parseSplitInfo(String fileName) {
     final match = _splitSuffix.firstMatch(fileName.trim());
     if (match == null) {

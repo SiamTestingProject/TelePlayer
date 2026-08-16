@@ -26,7 +26,7 @@ Reference: https://github.com/weebzone/Telegram-Stremio
 
 1. Authenticate a Telegram user session through TDLib.
 2. Read configured channel histories.
-3. Keep only playable video/document media.
+3. Keep playable video, audio, and compatible document media.
 4. Group split file parts into one virtual item.
 5. Register the selected item with a local HTTP streaming server.
 6. Serve player range requests by asking TDLib for the matching byte range.

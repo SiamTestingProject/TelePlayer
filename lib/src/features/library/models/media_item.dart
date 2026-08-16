@@ -1,6 +1,6 @@
 import '../../../core/utils/file_name_utils.dart';
 
-enum MediaKind { video, document, splitVideo }
+enum MediaKind { video, audio, document, splitVideo }
 
 class MediaItem {
   const MediaItem({

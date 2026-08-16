@@ -124,7 +124,11 @@ class _MediaTile extends StatelessWidget {
               child: ColoredBox(
                 color: colors.primaryContainer,
                 child: Icon(
-                  item.isSplit ? Icons.call_split_outlined : Icons.movie_outlined,
+                  item.isSplit
+                      ? Icons.call_split_outlined
+                      : item.kind == MediaKind.audio
+                          ? Icons.music_note_rounded
+                          : Icons.movie_outlined,
                   color: colors.onPrimaryContainer,
                   size: 40,
                 ),
