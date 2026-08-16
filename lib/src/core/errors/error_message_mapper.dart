@@ -71,15 +71,16 @@ class ErrorMessageMapper {
           body: 'This device cannot play the codec used by this file.',
         );
       case AppErrorCode.playbackFailure:
-        return const FriendlyError(
+        return FriendlyError(
           title: 'Playback failed',
-          body: 'The player could not start this stream.',
+          body: appError.message ?? 'The player could not start this stream.',
           actionLabel: 'Try again',
         );
       case AppErrorCode.networkInterrupted:
-        return const FriendlyError(
+        return FriendlyError(
           title: 'Stream interrupted',
-          body: 'The network dropped while streaming. Playback can resume when the connection returns.',
+          body: appError.message ??
+              'The network dropped while streaming. Playback can resume when the connection returns.',
           actionLabel: 'Resume',
         );
       case AppErrorCode.telegramApi:

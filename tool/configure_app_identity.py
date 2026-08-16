@@ -13,6 +13,7 @@ WINDOWS_BINARY_NAME = "teleplayer"
 ANDROID_INTERNET_PERMISSION = (
     '<uses-permission android:name="android.permission.INTERNET" />'
 )
+ANDROID_CLEARTEXT_ATTRIBUTE = 'android:usesCleartextTraffic="true"'
 
 
 def _replace(path: Path, pattern: str, replacement: str) -> None:
@@ -44,6 +45,17 @@ def configure_android(root: Path) -> None:
         )
         if count == 0:
             raise RuntimeError(f"Expected application entry was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
+    if ANDROID_CLEARTEXT_ATTRIBUTE not in original:
+        updated, count = re.subn(
+            r'(android:label="TelePlayer")',
+            rf'\1\n        {ANDROID_CLEARTEXT_ATTRIBUTE}',
+            original,
+            count=1,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected TelePlayer label was not found in {manifest}")
         manifest.write_text(updated, encoding="utf-8")
 
 

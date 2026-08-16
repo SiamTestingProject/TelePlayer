@@ -228,6 +228,9 @@ class TdlibTelegramClient implements TelegramClient {
     if (refreshed == null) {
       throw const AppException(AppErrorCode.invalidMedia);
     }
+    if (item.isSplit) {
+      return refreshed.copyWith(size: item.size, parts: item.parts);
+    }
     return refreshed;
   }
 
@@ -256,7 +259,22 @@ class TdlibTelegramClient implements TelegramClient {
     final handle = await io.File(path).open();
     try {
       await handle.setPosition(localStart);
-      return Uint8List.fromList(await handle.read(limit));
+      final bytes = BytesBuilder(copy: false);
+      while (bytes.length < limit) {
+        final chunk = await handle.read(limit - bytes.length);
+        if (chunk.isEmpty) {
+          break;
+        }
+        bytes.add(chunk);
+      }
+      final result = bytes.takeBytes();
+      if (result.length != limit) {
+        throw const AppException(
+          AppErrorCode.cacheUnavailable,
+          message: 'Telegram did not finish preparing the requested media range.',
+        );
+      }
+      return result;
     } finally {
       await handle.close();
     }
@@ -416,7 +434,7 @@ class TdlibTelegramClient implements TelegramClient {
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.1.2',
+        applicationVersion: '1.2.0',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -488,9 +506,13 @@ class TdlibTelegramClient implements TelegramClient {
     if (fileId <= 0) {
       return null;
     }
-    final fileSize = int.tryParse(file['size']?.toString() ?? '') ??
-        int.tryParse(file['expected_size']?.toString() ?? '') ??
-        0;
+    final declaredSize = int.tryParse(file['size']?.toString() ?? '') ?? 0;
+    final expectedSize =
+        int.tryParse(file['expected_size']?.toString() ?? '') ?? 0;
+    final fileSize = declaredSize > 0 ? declaredSize : expectedSize;
+    if (fileSize <= 0) {
+      return null;
+    }
     final split = FileNameUtils.parseSplitInfo(fileName);
     final id = '$chatId:${message['id'] ?? 0}:$fileId';
     return MediaItem(
@@ -503,6 +525,7 @@ class TdlibTelegramClient implements TelegramClient {
       mimeType: mimeType,
       size: fileSize,
       kind: split == null ? kind : MediaKind.splitVideo,
+      artist: _artistForMedia(media),
       durationSeconds: int.tryParse(media['duration']?.toString() ?? ''),
       thumbnailFileId: _thumbnailFileId(media),
       localPath: _asMap(file['local'])?['path']?.toString(),
@@ -622,6 +645,11 @@ class TdlibTelegramClient implements TelegramClient {
   String _titleForMedia(Map<String, dynamic> media, String fallback) {
     final title = media['title']?.toString().trim() ?? '';
     return title.isEmpty ? fallback : title;
+  }
+
+  String? _artistForMedia(Map<String, dynamic> media) {
+    final performer = media['performer']?.toString().trim() ?? '';
+    return performer.isEmpty ? null : performer;
   }
 
   Map<String, dynamic>? _asMap(Object? value) {

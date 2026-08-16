@@ -13,6 +13,7 @@ class MediaItem {
     required this.mimeType,
     required this.size,
     required this.kind,
+    this.artist,
     this.durationSeconds,
     this.thumbnailFileId,
     this.localPath,
@@ -28,6 +29,7 @@ class MediaItem {
   final String mimeType;
   final int size;
   final MediaKind kind;
+  final String? artist;
   final int? durationSeconds;
   final int? thumbnailFileId;
   final String? localPath;
@@ -51,6 +53,7 @@ class MediaItem {
       mimeType: mimeType,
       size: size ?? this.size,
       kind: kind,
+      artist: artist,
       durationSeconds: durationSeconds,
       thumbnailFileId: thumbnailFileId,
       localPath: localPath ?? this.localPath,

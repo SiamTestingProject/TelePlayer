@@ -1,15 +1,24 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
 import '../models/media_item.dart';
+import 'media_artwork.dart';
+
+enum _LibraryFilter { songs, videos, all }
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({required this.onOpenPlayer, super.key});
+  const LibraryScreen({
+    required this.onOpenPlayer,
+    required this.onOpenSettings,
+    super.key,
+  });
 
   final VoidCallback onOpenPlayer;
+  final VoidCallback onOpenSettings;
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -17,6 +26,8 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   bool _requestedInitialLoad = false;
+  bool _sortByTitle = false;
+  _LibraryFilter _filter = _LibraryFilter.songs;
 
   @override
   void didChangeDependencies() {
@@ -36,68 +47,204 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final library = scope.libraryController;
+    final visibleItems = _visibleItems(library.items);
+    final colors = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Library'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: library.isLoading ? null : () => unawaited(library.load()),
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      backgroundColor: colors.surface,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: library.load,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (library.error != null) ...[
-                ErrorPanel(error: library.error!, onAction: () => unawaited(library.load())),
-                const SizedBox(height: 12),
-              ],
-              if (library.isLoading) const LinearProgressIndicator(),
-              if (!library.isLoading && library.items.isEmpty)
-                SizedBox(
-                  height: 360,
-                  child: Center(
-                    child: Text(
-                      'No media found',
-                      style: Theme.of(context).textTheme.titleMedium,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: <Widget>[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 20, 18, 8),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          'Library',
+                          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -1.2,
+                              ),
+                        ),
+                      ),
+                      IconButton.filledTonal(
+                        tooltip: 'Settings',
+                        onPressed: widget.onOpenSettings,
+                        icon: const Icon(Icons.settings_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 66,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    children: <Widget>[
+                      _FilterPill(
+                        label: 'SONGS',
+                        selected: _filter == _LibraryFilter.songs,
+                        onSelected: () => setState(() => _filter = _LibraryFilter.songs),
+                      ),
+                      _FilterPill(
+                        label: 'VIDEOS',
+                        selected: _filter == _LibraryFilter.videos,
+                        onSelected: () => setState(() => _filter = _LibraryFilter.videos),
+                      ),
+                      _FilterPill(
+                        label: 'ALL MEDIA',
+                        selected: _filter == _LibraryFilter.all,
+                        onSelected: () => setState(() => _filter = _LibraryFilter.all),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      FilledButton.tonalIcon(
+                        onPressed: visibleItems.isEmpty
+                            ? null
+                            : () => _shuffle(scope, visibleItems),
+                        icon: const Icon(Icons.shuffle_rounded),
+                        label: const Text('Shuffle'),
+                      ),
+                      const Spacer(),
+                      IconButton.filledTonal(
+                        tooltip: _sortByTitle ? 'Sort by newest' : 'Sort by title',
+                        onPressed: () => setState(() => _sortByTitle = !_sortByTitle),
+                        icon: Icon(
+                          _sortByTitle
+                              ? Icons.schedule_rounded
+                              : Icons.sort_by_alpha_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton.filledTonal(
+                        tooltip: 'Refresh',
+                        onPressed: library.isLoading
+                            ? null
+                            : () => unawaited(library.load()),
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (library.error != null)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  sliver: SliverToBoxAdapter(
+                    child: ErrorPanel(
+                      error: library.error!,
+                      onAction: () => unawaited(library.load()),
                     ),
                   ),
+                ),
+              if (library.isLoading)
+                const SliverToBoxAdapter(child: LinearProgressIndicator()),
+              if (!library.isLoading && visibleItems.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyLibrary(filter: _filter),
                 )
               else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-                    final columns = width >= 1000 ? 4 : width >= 680 ? 3 : 1;
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        mainAxisExtent: 156,
-                      ),
-                      itemCount: library.items.length,
-                      itemBuilder: (context, index) {
-                        return _MediaTile(
-                          item: library.items[index],
-                          onTap: () {
-                            unawaited(scope.playerController.open(library.items[index]));
-                            widget.onOpenPlayer();
-                          },
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final item = visibleItems[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _MediaTile(
+                            item: item,
+                            onTap: () => _open(scope, item),
+                          ),
                         );
                       },
-                    );
-                  },
+                      childCount: visibleItems.length,
+                    ),
+                  ),
                 ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  List<MediaItem> _visibleItems(List<MediaItem> items) {
+    final filtered = switch (_filter) {
+      _LibraryFilter.songs =>
+        items.where((item) => item.kind == MediaKind.audio).toList(),
+      _LibraryFilter.videos =>
+        items.where((item) => item.kind != MediaKind.audio).toList(),
+      _LibraryFilter.all => items.toList(),
+    };
+    if (_sortByTitle) {
+      filtered.sort(
+        (left, right) => left.title.toLowerCase().compareTo(
+              right.title.toLowerCase(),
+            ),
+      );
+    }
+    return filtered;
+  }
+
+  void _open(AppScope scope, MediaItem item) {
+    unawaited(scope.playerController.open(item));
+    widget.onOpenPlayer();
+  }
+
+  void _shuffle(AppScope scope, List<MediaItem> items) {
+    if (!scope.playerController.shuffleEnabled) {
+      scope.playerController.toggleShuffle();
+    }
+    _open(scope, items[Random().nextInt(items.length)]);
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  const _FilterPill({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        showCheckmark: false,
+        onSelected: (_) => onSelected(),
+        labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     );
   }
@@ -111,106 +258,124 @@ class _MediaTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scope = AppScope.of(context);
     final colors = Theme.of(context).colorScheme;
-    return Card(
+    final subtitle = item.artist?.trim().isNotEmpty == true
+        ? item.artist!
+        : '${item.readableSize} · ${_typeLabel(item)}';
+    return Material(
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(26),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: InkWell(
         onTap: onTap,
-        child: Row(
-          children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: ColoredBox(
-                color: colors.primaryContainer,
-                child: Icon(
-                  item.isSplit
-                      ? Icons.call_split_outlined
-                      : item.kind == MediaKind.audio
-                          ? Icons.music_note_rounded
-                          : Icons.movie_outlined,
-                  color: colors.onPrimaryContainer,
-                  size: 40,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: <Widget>[
+              SizedBox.square(
+                dimension: 76,
+                child: Hero(
+                  tag: 'artwork-${item.id}',
+                  child: MediaArtwork(
+                    item: item,
+                    libraryController: scope.libraryController,
+                    borderRadius: 18,
+                    iconSize: 30,
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
+              const SizedBox(width: 16),
+              Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  children: <Widget>[
                     Text(
                       item.title,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
-                    const Spacer(),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _InfoChip(icon: Icons.data_usage_outlined, label: item.readableSize),
-                        if (item.durationSeconds != null)
-                          _InfoChip(
-                            icon: Icons.schedule_outlined,
-                            label: _duration(item.durationSeconds!),
+                    const SizedBox(height: 5),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.onSurfaceVariant,
                           ),
-                        if (item.isSplit)
-                          _InfoChip(
-                            icon: Icons.splitscreen_outlined,
-                            label: '${item.parts.length} parts',
-                          ),
-                      ],
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+              PopupMenuButton<String>(
+                tooltip: 'Media actions',
+                icon: const Icon(Icons.more_vert_rounded),
+                onSelected: (_) => onTap(),
+                itemBuilder: (context) => const <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'play',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.play_arrow_rounded),
+                      title: Text('Play now'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  static String _duration(int seconds) {
-    final duration = Duration(seconds: seconds);
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:$minutes' : '${duration.inMinutes} min';
+  String _typeLabel(MediaItem item) {
+    if (item.kind == MediaKind.audio) {
+      return 'Audio';
+    }
+    if (item.isSplit) {
+      return '${item.parts.length} parts';
+    }
+    return 'Video';
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label});
+class _EmptyLibrary extends StatelessWidget {
+  const _EmptyLibrary({required this.filter});
 
-  final IconData icon;
-  final String label;
+  final _LibraryFilter filter;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall,
+    final label = switch (filter) {
+      _LibraryFilter.songs => 'No songs found',
+      _LibraryFilter.videos => 'No videos found',
+      _LibraryFilter.all => 'No media found',
+    };
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.library_music_rounded,
+              size: 64,
+              color: Theme.of(context).colorScheme.primary,
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(label, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Text(
+              'Pull down to refresh the configured Telegram channels.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

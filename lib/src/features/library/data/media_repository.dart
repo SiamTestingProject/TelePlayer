@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../core/services/local_streaming_server.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../settings/models/app_settings.dart';
@@ -21,6 +23,15 @@ class MediaRepository {
   }
 
   Future<Uri> streamUriFor(MediaItem item) {
-    return _streamingServer.register(item);
+    return _refreshAndRegister(item);
+  }
+
+  Future<Uri> _refreshAndRegister(MediaItem item) async {
+    final refreshed = await _telegramClient.refreshMedia(item);
+    return _streamingServer.register(refreshed);
+  }
+
+  Future<Uint8List?> loadThumbnail(MediaItem item) {
+    return _telegramClient.loadThumbnail(item);
   }
 }

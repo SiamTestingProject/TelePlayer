@@ -57,13 +57,17 @@ class LocalStreamingServer {
         await request.response.close();
         return;
       }
-      final range = ByteRange.parse(request.headers.value(HttpHeaders.rangeHeader), item.size);
+      final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
+      final range = ByteRange.parse(rangeHeader, item.size);
+      final rangeWasRequested = rangeHeader?.trim().isNotEmpty == true;
+      request.response.persistentConnection = true;
       request.response.headers
         ..set(HttpHeaders.contentTypeHeader, item.mimeType)
         ..set('accept-ranges', 'bytes')
         ..set(HttpHeaders.contentLengthHeader, range.length)
-        ..set(HttpHeaders.cacheControlHeader, 'no-store');
-      if (range.isPartial) {
+        ..set(HttpHeaders.cacheControlHeader, 'no-store')
+        ..set(HttpHeaders.contentDispositionHeader, 'inline');
+      if (rangeWasRequested) {
         request.response.statusCode = HttpStatus.partialContent;
         request.response.headers.set('content-range', range.contentRange);
       }
@@ -88,7 +92,10 @@ class LocalStreamingServer {
   }
 
   Future<void> _writeRange(HttpResponse response, MediaItem item, ByteRange range) async {
-    const chunkSize = 1024 * 1024;
+    // Keep the first reads small so the native player receives enough bytes to
+    // identify the codec without waiting for a multi-megabyte Telegram download.
+    // Subsequent reads remain sequential and TDLib can reuse its local cache.
+    const chunkSize = 128 * 1024;
     var cursor = range.start;
     while (cursor <= range.end) {
       final boundary = _partBoundaryEnd(item, cursor);

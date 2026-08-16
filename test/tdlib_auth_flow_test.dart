@@ -217,7 +217,8 @@ void main() {
                       'audio': <String, dynamic>{
                         '@type': 'file',
                         'id': 77,
-                        'size': 32600000,
+                        'size': 0,
+                        'expected_size': 32600000,
                         'local': <String, dynamic>{'path': ''},
                       },
                     },
@@ -246,7 +247,9 @@ void main() {
     expect(items, hasLength(1));
     expect(items.single.kind, MediaKind.audio);
     expect(items.single.title, 'Example Track');
+    expect(items.single.artist, 'Example Artist');
     expect(items.single.fileId, 77);
+    expect(items.single.size, 32600000);
     expect(items.single.thumbnailFileId, 88);
   });
 }

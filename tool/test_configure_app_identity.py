@@ -28,6 +28,10 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 manifest_text.count('android.permission.INTERNET'),
                 1,
             )
+            self.assertEqual(
+                manifest_text.count('android:usesCleartextTraffic="true"'),
+                1,
+            )
 
     def test_configures_windows_product_and_binary_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

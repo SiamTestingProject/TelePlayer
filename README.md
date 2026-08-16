@@ -2,6 +2,12 @@
 
 A Flutter Material 3 app for Android and Windows that signs in to Telegram, browses configured channel media, and plays video and audio through a local range-aware streaming server.
 
+Version 1.2 adds an artwork-led music library, a persistent mini-player, a
+full-screen Now Playing experience, queue/shuffle/repeat/favorite controls, and
+lower-latency Telegram playback. Android permits the app's loopback HTTP media
+bridge, and open-ended player range requests receive proper `206 Partial
+Content` responses so native playback can initialize and seek reliably.
+
 ## Current Architecture
 
 - UI: `lib/src/features/*/presentation`
@@ -76,19 +82,19 @@ Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Push a version tag such as `v1.1.2` to publish a normal GitHub Release instead.
+Push a version tag such as `v1.2.0` to publish a normal GitHub Release instead.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.1.2.apk`
-- `TelePlayer-v1.1.2-arm64.apk`
-- `TelePlayer-v1.1.2-armeabi-v7a.apk`
-- `TelePlayer-v1.1.2-x86_64.apk`
-- `TelePlayer-v1.1.2-aab.aab`
-- `TelePlayer-v1.1.2-Setup.exe`
-- `TelePlayer-v1.1.2-windows-x64.zip`
+- `TelePlayer-v1.2.0.apk`
+- `TelePlayer-v1.2.0-arm64.apk`
+- `TelePlayer-v1.2.0-armeabi-v7a.apk`
+- `TelePlayer-v1.2.0-x86_64.apk`
+- `TelePlayer-v1.2.0-aab.aab`
+- `TelePlayer-v1.2.0-Setup.exe`
+- `TelePlayer-v1.2.0-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop
