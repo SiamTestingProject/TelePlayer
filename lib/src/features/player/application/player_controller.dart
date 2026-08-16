@@ -102,7 +102,6 @@ class PlayerController extends ChangeNotifier {
             <audio.AudioSource>[source],
             initialIndex: 0,
             initialPosition: resumeAt,
-            useLazyPreparation: false,
           )
           .timeout(const Duration(seconds: 60));
       if (generation != _openGeneration || _disposed) {
@@ -243,7 +242,7 @@ class PlayerController extends ChangeNotifier {
     if (existing != null) {
       return existing;
     }
-    final player = audio.AudioPlayer();
+    final player = audio.AudioPlayer(useLazyPreparation: false);
     _audioPlayer = player;
     _playerSubscriptions
       ..add(player.playerStateStream.listen(_handlePlayerState))
