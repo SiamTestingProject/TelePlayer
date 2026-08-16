@@ -184,6 +184,9 @@ jobs:
       - name: Apply TelePlayer Windows identity
         run: python tool/configure_app_identity.py --platform windows
 
+      - name: Patch Windows C++ coroutine compatibility
+        run: python tool/patch_windows_coroutine_compat.py
+
       - name: Install dependencies
         run: flutter pub get
 
