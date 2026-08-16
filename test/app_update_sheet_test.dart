@@ -58,11 +58,18 @@ void main() {
     );
 
     await tester.tap(find.text('Show update'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Changelog'), findsOneWidget);
     expect(find.text('v1.2.0'), findsOneWidget);
+
+    await tester.ensureVisible(find.text("What's New"));
+    await tester.pump();
     expect(find.text("What's New"), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Added automatic update checks.'));
+    await tester.pump();
     expect(find.text('Added automatic update checks.'), findsOneWidget);
   });
 }

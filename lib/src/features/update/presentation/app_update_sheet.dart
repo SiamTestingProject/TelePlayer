@@ -59,10 +59,13 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
       color: colors.surfaceContainer,
       clipBehavior: Clip.antiAlias,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(38)),
-      child: ListView(
+      child: SingleChildScrollView(
         controller: widget.scrollController,
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
-        children: [
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           Center(
             child: Container(
               width: 56,
@@ -73,82 +76,35 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(34),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[
-                  colors.primaryContainer,
-                  colors.secondaryContainer.withValues(alpha: 0.86),
-                  colors.tertiaryContainer.withValues(alpha: 0.68),
-                ],
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: colors.primaryContainer,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Icon(
+                  Icons.system_update_alt_rounded,
+                  size: 32,
+                  color: colors.onPrimaryContainer,
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    color: colors.surface.withValues(alpha: 0.52),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Icon(
-                    Icons.system_update_alt_rounded,
-                    size: 40,
-                    color: colors.primary,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  'Changelog',
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'TelePlayer Update',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: colors.onPrimaryContainer,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'v${widget.update.version}',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: colors.onPrimaryContainer.withValues(alpha: 0.78),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 26),
-          Text(
-            'Changelog',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 24,
-            child: CustomPaint(
-              painter: _WaveDividerPainter(
-                color: colors.primary.withValues(alpha: 0.75),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 18),
           Row(
             children: [
               Container(
@@ -244,7 +200,9 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
             onPressed: _isOpening ? null : () => Navigator.of(context).pop(),
             child: const Text('Later'),
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -301,47 +259,6 @@ class _ChangeItem extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _WaveDividerPainter extends CustomPainter {
-  const _WaveDividerPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    final path = Path()..moveTo(0, size.height / 2);
-    const waveWidth = 38.0;
-    const amplitude = 7.0;
-    var x = 0.0;
-    while (x < size.width) {
-      path
-        ..quadraticBezierTo(
-          x + waveWidth / 4,
-          size.height / 2 + amplitude,
-          x + waveWidth / 2,
-          size.height / 2,
-        )
-        ..quadraticBezierTo(
-          x + waveWidth * 0.75,
-          size.height / 2 - amplitude,
-          x + waveWidth,
-          size.height / 2,
-        );
-      x += waveWidth;
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_WaveDividerPainter oldDelegate) {
-    return oldDelegate.color != color;
   }
 }
 
