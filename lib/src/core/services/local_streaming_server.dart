@@ -77,25 +77,57 @@ class LocalStreamingServer {
       }
       await _writeRange(request.response, item, range);
       await request.response.close();
+    } on SocketException {
+      await _closeQuietly(request.response);
+    } on HttpException {
+      await _closeQuietly(request.response);
     } on FormatException {
-      request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
-      await request.response.close();
+      await _sendError(
+        request.response,
+        HttpStatus.requestedRangeNotSatisfiable,
+        'The requested media range is unavailable.',
+      );
     } on AppException catch (error) {
-      request.response.statusCode = _statusForError(error);
-      request.response.write(error.message ?? 'Unable to stream this media.');
-      await request.response.close();
+      await _sendError(
+        request.response,
+        _statusForError(error),
+        error.message ?? 'Unable to stream this media.',
+      );
     } catch (_) {
-      request.response.statusCode = HttpStatus.internalServerError;
-      request.response.write('Unable to stream this media.');
-      await request.response.close();
+      await _sendError(
+        request.response,
+        HttpStatus.internalServerError,
+        'Unable to stream this media.',
+      );
+    }
+  }
+
+  Future<void> _sendError(
+    HttpResponse response,
+    int statusCode,
+    String message,
+  ) async {
+    try {
+      response.statusCode = statusCode;
+      response.write(message);
+    } catch (_) {
+      // Headers may already be committed for an interrupted range response.
+    }
+    await _closeQuietly(response);
+  }
+
+  Future<void> _closeQuietly(HttpResponse response) async {
+    try {
+      await response.close();
+    } catch (_) {
+      // The player may close an obsolete range request after seeking.
     }
   }
 
   Future<void> _writeRange(HttpResponse response, MediaItem item, ByteRange range) async {
-    // Keep the first reads small so the native player receives enough bytes to
-    // identify the codec without waiting for a multi-megabyte Telegram download.
-    // Subsequent reads remain sequential and TDLib can reuse its local cache.
-    const chunkSize = 128 * 1024;
+    // Balance request overhead with low-bandwidth responsiveness. Very large
+    // synchronous TDLib reads can exceed a native player's socket timeout.
+    const chunkSize = 256 * 1024;
     var cursor = range.start;
     while (cursor <= range.end) {
       final boundary = _partBoundaryEnd(item, cursor);

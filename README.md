@@ -8,6 +8,12 @@ lower-latency Telegram playback. Android permits the app's loopback HTTP media
 bridge, and open-ended player range requests receive proper `206 Partial
 Content` responses so native playback can initialize and seek reliably.
 
+The Library download button scans the complete history of every configured
+channel and persistently caches playable-file metadata plus the highest-quality
+thumbnail Telegram exposes. Cached catalog entries remain browsable when a
+later refresh is interrupted; media payloads stay in TDLib's managed cache and
+are downloaded as playback needs them.
+
 ## Current Architecture
 
 - UI: `lib/src/features/*/presentation`
@@ -18,7 +24,8 @@ Content` responses so native playback can initialize and seek reliably.
 - Media repository: `lib/src/features/library`
 - Streaming: `lib/src/core/services/local_streaming_server.dart`
 - Media player: `lib/src/features/player`
-- Local cache: `lib/src/core/services/local_cache_service.dart`
+- Local catalog/artwork cache: `lib/src/features/library/data/channel_catalog_cache.dart`
+- Media cache limits: `lib/src/core/services/local_cache_service.dart`
 - Settings: `lib/src/features/settings`
 - GitHub release updates: `lib/src/features/update`
 - Models: feature `models` folders

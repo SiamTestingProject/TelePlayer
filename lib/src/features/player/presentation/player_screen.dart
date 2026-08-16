@@ -338,6 +338,7 @@ class _ProgressSection extends StatelessWidget {
         position: Duration.zero,
         duration: Duration(seconds: item.durationSeconds ?? 0),
         item: item,
+        isBuffering: false,
         onChanged: null,
       );
     }
@@ -353,6 +354,7 @@ class _ProgressSection extends StatelessWidget {
           position: position,
           duration: duration,
           item: item,
+          isBuffering: value.isBuffering,
           onChanged: duration <= Duration.zero
               ? null
               : (fraction) => unawaited(player.seekToFraction(fraction)),
@@ -367,12 +369,14 @@ class _ProgressContent extends StatelessWidget {
     required this.position,
     required this.duration,
     required this.item,
+    required this.isBuffering,
     required this.onChanged,
   });
 
   final Duration position;
   final Duration duration;
   final MediaItem item;
+  final bool isBuffering;
   final ValueChanged<double>? onChanged;
 
   @override
@@ -408,11 +412,25 @@ class _ProgressContent extends StatelessWidget {
                       color: colors.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(18),
                     ),
-                    child: Text(
-                      '${item.readableSize} · $type',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (isBuffering) ...<Widget>[
+                          const SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 7),
+                        ],
+                        Text(
+                          isBuffering
+                              ? 'Buffering'
+                              : '${item.readableSize} · $type',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
                     ),
                   ),
                 ),

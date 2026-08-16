@@ -78,6 +78,13 @@ class _RangeTelegramClient implements TelegramClient {
       const <MediaItem>[];
 
   @override
+  Future<List<MediaItem>> listAllMedia({
+    required List<int> channelIds,
+    required void Function(MediaScanProgress progress) onProgress,
+  }) async =>
+      const <MediaItem>[];
+
+  @override
   Future<void> initialize(AppSettings settings) async {}
 
   @override

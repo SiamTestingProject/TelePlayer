@@ -172,6 +172,13 @@ class _FakeTelegramClient implements TelegramClient {
       Future<List<MediaItem>>.value(const <MediaItem>[]);
 
   @override
+  Future<List<MediaItem>> listAllMedia({
+    required List<int> channelIds,
+    required void Function(MediaScanProgress progress) onProgress,
+  }) =>
+      Future<List<MediaItem>>.value(const <MediaItem>[]);
+
+  @override
   Future<MediaItem> refreshMedia(MediaItem item) {
     return Future<MediaItem>.value(item);
   }

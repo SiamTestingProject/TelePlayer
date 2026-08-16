@@ -27,6 +27,7 @@ class TdlibTelegramClient implements TelegramClient {
   final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
   final _authSteps = StreamController<AuthStep>.broadcast();
   final _errors = StreamController<AppException>.broadcast();
+  final _fileDownloadQueues = <int, Future<void>>{};
 
   AppSettings? _settings;
   StreamSubscription<Map<String, dynamic>>? _updatesSub;
@@ -171,6 +172,75 @@ class TdlibTelegramClient implements TelegramClient {
     return _mergeSplitParts(items);
   }
 
+  @override
+  Future<List<MediaItem>> listAllMedia({
+    required List<int> channelIds,
+    required void Function(MediaScanProgress progress) onProgress,
+  }) async {
+    await _ensureChatsAvailable(channelIds);
+    final items = <MediaItem>[];
+    var scannedMessages = 0;
+
+    for (final chatId in channelIds) {
+      var fromMessageId = 0;
+      final seenMessageIds = <int>{};
+      while (true) {
+        final response = await _gateway.send(
+          td.GetChatHistory(
+            chatId: chatId,
+            fromMessageId: fromMessageId,
+            offset: 0,
+            limit: 100,
+            onlyLocal: false,
+          ),
+          timeout: const Duration(minutes: 2),
+        );
+        final messages =
+            (response['messages'] as List<dynamic>? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map((message) => Map<String, dynamic>.from(message))
+                .toList(growable: false);
+        if (messages.isEmpty) {
+          break;
+        }
+
+        var newMessages = 0;
+        for (final message in messages) {
+          final messageId = int.tryParse(message['id']?.toString() ?? '') ?? 0;
+          if (messageId <= 0 || !seenMessageIds.add(messageId)) {
+            continue;
+          }
+          newMessages += 1;
+          final item = _mediaFromMessage(chatId, message);
+          if (item != null) {
+            items.add(item);
+          }
+        }
+        scannedMessages += newMessages;
+        onProgress(
+          MediaScanProgress(
+            scannedMessages: scannedMessages,
+            mediaCount: items.length,
+          ),
+        );
+
+        if (newMessages == 0) {
+          break;
+        }
+        final oldestMessageId = messages
+            .map((message) =>
+                int.tryParse(message['id']?.toString() ?? '') ?? 0)
+            .where((id) => id > 0)
+            .fold<int>(0, (oldest, id) => oldest == 0 || id < oldest ? id : oldest);
+        if (oldestMessageId == 0 || oldestMessageId == fromMessageId) {
+          break;
+        }
+        fromMessageId = oldestMessageId;
+      }
+    }
+    return _mergeSplitParts(items);
+  }
+
   Future<void> _ensureChatsAvailable(List<int> channelIds) async {
     final unresolved = channelIds.toSet();
     await _removeAvailableChats(unresolved);
@@ -241,42 +311,62 @@ class TdlibTelegramClient implements TelegramClient {
     final localEnd = target == null ? end : min(target.size - 1, end - _cumulativeOffset(item, target));
     final fileId = target?.fileId ?? item.fileId;
     final limit = localEnd - localStart + 1;
-    final response = await _gateway.send(
-      td.DownloadFile(
-        fileId: fileId,
-        priority: 30,
-        offset: localStart,
-        limit: limit,
-        synchronous: true,
-      ),
-      timeout: const Duration(minutes: 3),
-    );
-    final file = _extractFile(response);
-    final path = file.localPath;
-    if (path == null || path.isEmpty || !await io.File(path).exists()) {
-      throw const AppException(AppErrorCode.cacheUnavailable);
-    }
-    final handle = await io.File(path).open();
-    try {
-      await handle.setPosition(localStart);
-      final bytes = BytesBuilder(copy: false);
-      while (bytes.length < limit) {
-        final chunk = await handle.read(limit - bytes.length);
-        if (chunk.isEmpty) {
-          break;
+    return _withFileDownloadLock(fileId, () async {
+      final response = await _gateway.send(
+        td.DownloadFile(
+          fileId: fileId,
+          priority: 32,
+          offset: localStart,
+          limit: limit,
+          synchronous: true,
+        ),
+        timeout: const Duration(minutes: 3),
+      );
+      final file = _extractFile(response);
+      final path = file.localPath;
+      if (path == null || path.isEmpty || !await io.File(path).exists()) {
+        throw const AppException(AppErrorCode.cacheUnavailable);
+      }
+      final handle = await io.File(path).open();
+      try {
+        await handle.setPosition(localStart);
+        final bytes = BytesBuilder(copy: false);
+        while (bytes.length < limit) {
+          final chunk = await handle.read(limit - bytes.length);
+          if (chunk.isEmpty) {
+            break;
+          }
+          bytes.add(chunk);
         }
-        bytes.add(chunk);
+        final result = bytes.takeBytes();
+        if (result.length != limit) {
+          throw const AppException(
+            AppErrorCode.cacheUnavailable,
+            message: 'Telegram did not finish preparing the requested media range.',
+          );
+        }
+        return result;
+      } finally {
+        await handle.close();
       }
-      final result = bytes.takeBytes();
-      if (result.length != limit) {
-        throw const AppException(
-          AppErrorCode.cacheUnavailable,
-          message: 'Telegram did not finish preparing the requested media range.',
-        );
-      }
-      return result;
+    });
+  }
+
+  Future<T> _withFileDownloadLock<T>(
+    int fileId,
+    Future<T> Function() operation,
+  ) async {
+    final previous = _fileDownloadQueues[fileId] ?? Future<void>.value();
+    final turn = Completer<void>();
+    _fileDownloadQueues[fileId] = turn.future;
+    await previous;
+    try {
+      return await operation();
     } finally {
-      await handle.close();
+      turn.complete();
+      if (identical(_fileDownloadQueues[fileId], turn.future)) {
+        _fileDownloadQueues.remove(fileId);
+      }
     }
   }
 
@@ -540,7 +630,8 @@ class TdlibTelegramClient implements TelegramClient {
       if (split == null) {
         normal.add(item);
       } else {
-        grouped.putIfAbsent(split.groupKey, () => <MediaItem>[]).add(item);
+        final groupKey = '${item.chatId}:${split.groupKey}';
+        grouped.putIfAbsent(groupKey, () => <MediaItem>[]).add(item);
       }
     }
     final merged = <MediaItem>[...normal];
@@ -602,10 +693,42 @@ class TdlibTelegramClient implements TelegramClient {
   }
 
   int? _thumbnailFileId(Map<String, dynamic> media) {
-    final thumbnail = _asMap(media['thumbnail']) ??
-        _asMap(media['album_cover_thumbnail']);
-    final file = _asMap(thumbnail?['file']);
-    return int.tryParse(file?['id']?.toString() ?? '');
+    _ThumbnailCandidate? best;
+
+    void consider(Object? value) {
+      if (value is List) {
+        for (final entry in value) {
+          consider(entry);
+        }
+        return;
+      }
+      if (value is! Map) {
+        return;
+      }
+      final thumbnail = Map<String, dynamic>.from(value);
+      final file = _asMap(thumbnail['file']);
+      final fileId = int.tryParse(file?['id']?.toString() ?? '') ?? 0;
+      if (fileId > 0) {
+        final width = int.tryParse(thumbnail['width']?.toString() ?? '') ?? 0;
+        final height = int.tryParse(thumbnail['height']?.toString() ?? '') ?? 0;
+        final size = int.tryParse(file?['size']?.toString() ?? '') ?? 0;
+        final candidate = _ThumbnailCandidate(
+          fileId: fileId,
+          score: (width * height * 1000000) + size,
+        );
+        if (best == null || candidate.score > best!.score) {
+          best = candidate;
+        }
+      }
+      for (final key in const <String>['small', 'medium', 'big', 'thumbnail']) {
+        consider(thumbnail[key]);
+      }
+    }
+
+    consider(media['thumbnail']);
+    consider(media['album_cover_thumbnail']);
+    consider(media['external_album_covers']);
+    return best?.fileId;
   }
 
   String _mimeTypeForMedia(Map<String, dynamic> media, MediaKind kind) {
@@ -711,4 +834,11 @@ class _TdFile {
   const _TdFile({this.localPath});
 
   final String? localPath;
+}
+
+class _ThumbnailCandidate {
+  const _ThumbnailCandidate({required this.fileId, required this.score});
+
+  final int fileId;
+  final int score;
 }

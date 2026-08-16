@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
+import '../models/channel_cache_progress.dart';
 import '../models/media_item.dart';
 import 'media_artwork.dart';
 
@@ -85,6 +86,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         ),
                       ),
                       IconButton.filledTonal(
+                        tooltip: 'Cache all channel metadata and thumbnails',
+                        onPressed: library.isCaching
+                            ? null
+                            : () => unawaited(_cacheAll(scope)),
+                        icon: library.isCaching
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2.5),
+                              )
+                            : const Icon(Icons.download_for_offline_rounded),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
                         tooltip: 'Settings',
                         onPressed: widget.onOpenSettings,
                         icon: const Icon(Icons.settings_rounded),
@@ -109,6 +123,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ),
               ),
+              if (library.isCaching && library.cacheProgress != null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: _ChannelCacheBanner(
+                      progress: library.cacheProgress!,
+                    ),
+                  ),
+                ),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -227,6 +250,70 @@ class _LibraryScreenState extends State<LibraryScreen> {
       scope.playerController.toggleShuffle();
     }
     _open(scope, items[Random().nextInt(items.length)]);
+  }
+
+  Future<void> _cacheAll(AppScope scope) async {
+    final cached = await scope.libraryController.cacheAllChannels();
+    if (!mounted) {
+      return;
+    }
+    final message = cached
+        ? '${scope.libraryController.items.length} media files and their best thumbnails are cached.'
+        : 'Channel caching stopped. Review the message above and try again.';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _ChannelCacheBanner extends StatelessWidget {
+  const _ChannelCacheBanner({required this.progress});
+
+  final ChannelCacheProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.cloud_download_rounded, color: colors.onSecondaryContainer),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Caching channel library',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: colors.onSecondaryContainer,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            progress.label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSecondaryContainer,
+                ),
+          ),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            value: progress.fraction,
+            color: colors.onSecondaryContainer,
+            backgroundColor: colors.onSecondaryContainer.withValues(alpha: 0.18),
+          ),
+        ],
+      ),
+    );
   }
 }
 

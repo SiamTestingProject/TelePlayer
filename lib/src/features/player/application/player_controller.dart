@@ -22,6 +22,9 @@ class PlayerController extends ChangeNotifier {
   bool _shuffleEnabled = false;
   bool _repeatEnabled = false;
   bool _isAdvancing = false;
+  bool _isRecovering = false;
+  int _recoveryAttempts = 0;
+  Duration _recoveryBaseline = Duration.zero;
 
   VideoPlayerController? get videoController => _videoController;
   MediaItem? get item => _item;
@@ -31,7 +34,16 @@ class PlayerController extends ChangeNotifier {
   bool get repeatEnabled => _repeatEnabled;
   bool get isFavorite => _item != null && _favoriteIds.contains(_item!.id);
 
-  Future<void> open(MediaItem item) async {
+  Future<void> open(MediaItem item) {
+    _recoveryAttempts = 0;
+    _recoveryBaseline = Duration.zero;
+    return _open(item);
+  }
+
+  Future<void> _open(
+    MediaItem item, {
+    Duration resumeAt = Duration.zero,
+  }) async {
     _isLoading = true;
     _error = null;
     _item = item;
@@ -51,6 +63,11 @@ class PlayerController extends ChangeNotifier {
       );
       await nextController.initialize().timeout(const Duration(seconds: 60));
       await nextController.setLooping(_repeatEnabled);
+      if (resumeAt > Duration.zero &&
+          resumeAt < nextController.value.duration) {
+        await nextController.seekTo(resumeAt);
+      }
+      _recoveryBaseline = resumeAt;
       nextController.addListener(_handlePlaybackUpdate);
       _videoController = nextController;
       await nextController.play();
@@ -176,13 +193,41 @@ class PlayerController extends ChangeNotifier {
     }
     final value = controller.value;
     if (value.hasError && _error == null) {
-      _error = AppException(
-        AppErrorCode.playbackFailure,
-        message: 'Playback stopped because the Telegram stream was interrupted.',
-        cause: value.errorDescription,
-      );
-      notifyListeners();
+      if (_isRecovering) {
+        return;
+      }
+      final currentItem = _item;
+      if (currentItem != null && _recoveryAttempts < 3) {
+        final resumeAt = value.position;
+        final delay = Duration(milliseconds: 500 * (1 << _recoveryAttempts));
+        _recoveryAttempts += 1;
+        _isRecovering = true;
+        _isLoading = true;
+        notifyListeners();
+        unawaited(
+          Future<void>.delayed(delay)
+              .then((_) => _open(currentItem, resumeAt: resumeAt))
+              .whenComplete(() {
+            _isRecovering = false;
+            if (_videoController?.value.hasError == true && _error == null) {
+              _handlePlaybackUpdate();
+            }
+          }),
+        );
+      } else {
+        _error = AppException(
+          AppErrorCode.networkInterrupted,
+          message: 'The Telegram stream could not keep up. Check the connection and resume playback.',
+          cause: value.errorDescription,
+        );
+        notifyListeners();
+      }
       return;
+    }
+    if (value.isPlaying &&
+        value.position - _recoveryBaseline > const Duration(seconds: 15)) {
+      _recoveryAttempts = 0;
+      _recoveryBaseline = value.position;
     }
     final duration = value.duration;
     final reachedEnd = duration > Duration.zero &&

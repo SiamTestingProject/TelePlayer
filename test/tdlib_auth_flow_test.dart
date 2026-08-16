@@ -9,6 +9,7 @@ import 'package:telegram_media_player/src/features/library/models/media_item.dar
 import 'package:telegram_media_player/src/features/settings/models/app_settings.dart';
 import 'package:telegram_media_player/src/infrastructure/telegram/tdlib_gateway.dart';
 import 'package:telegram_media_player/src/infrastructure/telegram/tdlib_telegram_client.dart';
+import 'package:telegram_media_player/src/infrastructure/telegram/telegram_client.dart';
 
 void main() {
   test('selects the packaged TDLib filename for each supported platform', () {
@@ -211,8 +212,21 @@ void main() {
                       'performer': 'Example Artist',
                       'file_name': 'Example Track.mp3',
                       'mime_type': 'audio/mpeg',
+                      'thumbnail': <String, dynamic>{
+                        'width': 90,
+                        'height': 90,
+                        'file': <String, dynamic>{
+                          'id': 66,
+                          'size': 4000,
+                        },
+                      },
                       'album_cover_thumbnail': <String, dynamic>{
-                        'file': <String, dynamic>{'id': 88},
+                        'width': 640,
+                        'height': 640,
+                        'file': <String, dynamic>{
+                          'id': 88,
+                          'size': 48000,
+                        },
                       },
                       'audio': <String, dynamic>{
                         '@type': 'file',
@@ -252,7 +266,72 @@ void main() {
     expect(items.single.size, 32600000);
     expect(items.single.thumbnailFileId, 88);
   });
+
+  test('full media scan paginates through the complete channel history', () async {
+    var historyCalls = 0;
+    final gateway = _FakeTdlibGateway(
+      requestHandler: (request) {
+        switch (request.getConstructor()) {
+          case 'getChat':
+            return <String, dynamic>{
+              '@type': 'chat',
+              'id': -1001234567890,
+              'title': 'Complete Music Collection',
+            };
+          case 'getChatHistory':
+            historyCalls += 1;
+            final ids = switch (historyCalls) {
+              1 => List<int>.generate(100, (index) => 200 - index),
+              2 => List<int>.generate(100, (index) => 101 - index),
+              _ => const <int>[2],
+            };
+            return <String, dynamic>{
+              '@type': 'messages',
+              'messages': ids.map(_audioMessage).toList(growable: false),
+            };
+          default:
+            return <String, dynamic>{'@type': 'ok'};
+        }
+      },
+    );
+    final client = TdlibTelegramClient(gateway);
+    final progress = <MediaScanProgress>[];
+    addTearDown(client.close);
+
+    final items = await client.listAllMedia(
+      channelIds: const <int>[-1001234567890],
+      onProgress: progress.add,
+    );
+
+    expect(historyCalls, 3);
+    expect(items, hasLength(199));
+    expect(progress.last.scannedMessages, 199);
+    expect(progress.last.mediaCount, 199);
+  });
 }
+
+Map<String, dynamic> _audioMessage(int id) => <String, dynamic>{
+      '@type': 'message',
+      'id': id,
+      'content': <String, dynamic>{
+        '@type': 'messageAudio',
+        'audio': <String, dynamic>{
+          '@type': 'audio',
+          'duration': 180,
+          'title': 'Track $id',
+          'performer': 'Artist',
+          'file_name': 'Track $id.flac',
+          'mime_type': 'audio/flac',
+          'audio': <String, dynamic>{
+            '@type': 'file',
+            'id': 1000 + id,
+            'size': 42000000,
+            'expected_size': 42000000,
+            'local': <String, dynamic>{'path': ''},
+          },
+        },
+      },
+    };
 
 const _configuredSettings = AppSettings(
   apiId: 12345,
