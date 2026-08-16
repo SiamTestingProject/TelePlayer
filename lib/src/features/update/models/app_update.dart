@@ -114,9 +114,11 @@ class AppUpdate {
 class AppUpdateCheckResult {
   const AppUpdateCheckResult({
     required this.currentVersion,
+    required this.hasPublishedRelease,
     required this.update,
   });
 
   final String currentVersion;
+  final bool hasPublishedRelease;
   final AppUpdate? update;
 }

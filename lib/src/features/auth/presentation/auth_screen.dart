@@ -84,6 +84,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ] else if (step == AuthStepKind.needsCode) ...[
                   TextField(
+                    key: const ValueKey<String>('telegram-login-code'),
                     controller: _codeController,
                     keyboardType: TextInputType.number,
                     textInputAction: TextInputAction.done,
@@ -102,8 +103,13 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ] else if (step == AuthStepKind.needsPassword) ...[
                   TextField(
+                    key: const ValueKey<String>('telegram-two-step-password'),
                     controller: _passwordController,
                     obscureText: true,
+                    keyboardType: TextInputType.visiblePassword,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    autofillHints: const <String>[AutofillHints.password],
                     textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
                       labelText: 'Two-step password',
@@ -120,6 +126,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                 ] else ...[
                   TextField(
+                    key: const ValueKey<String>('telegram-phone-number'),
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
                     textInputAction: TextInputAction.done,

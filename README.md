@@ -60,6 +60,11 @@ available, the app shows a draggable Material 3 changelog sheet and opens the
 universal APK on Android or the Inno Setup installer on Windows. If that
 platform asset is missing, it opens the GitHub Release page instead.
 
+If GitHub has no public stable release yet, the updater reports that normal
+state instead of showing the Releases API's `404` response as an app error.
+Automatic `build-*` prereleases remain available on GitHub but are intentionally
+ignored by the in-app stable updater.
+
 The release repository is embedded at build time with
 `--dart-define=GITHUB_REPOSITORY=owner/repository`. GitHub Actions supplies this
 automatically. Android release builds also receive the Internet permission from
@@ -71,19 +76,19 @@ Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Push a version tag such as `v1.1.0` to publish a normal GitHub Release instead.
+Push a version tag such as `v1.1.1` to publish a normal GitHub Release instead.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.1.0.apk`
-- `TelePlayer-v1.1.0-arm64.apk`
-- `TelePlayer-v1.1.0-armeabi-v7a.apk`
-- `TelePlayer-v1.1.0-x86_64.apk`
-- `TelePlayer-v1.1.0-aab.aab`
-- `TelePlayer-v1.1.0-Setup.exe`
-- `TelePlayer-v1.1.0-windows-x64.zip`
+- `TelePlayer-v1.1.1.apk`
+- `TelePlayer-v1.1.1-arm64.apk`
+- `TelePlayer-v1.1.1-armeabi-v7a.apk`
+- `TelePlayer-v1.1.1-x86_64.apk`
+- `TelePlayer-v1.1.1-aab.aab`
+- `TelePlayer-v1.1.1-Setup.exe`
+- `TelePlayer-v1.1.1-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

@@ -62,7 +62,9 @@ class AppUpdateController extends ChangeNotifier {
       _update = result.update;
       if (result.update == null) {
         _status = AppUpdateStatus.upToDate;
-        _message = 'TelePlayer is up to date (v${result.currentVersion}).';
+        _message = result.hasPublishedRelease
+            ? 'TelePlayer is up to date (v${result.currentVersion}).'
+            : 'No public stable GitHub release is available yet.';
       } else {
         _status = AppUpdateStatus.updateAvailable;
         _message = 'TelePlayer v${result.update!.version} is available.';

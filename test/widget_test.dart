@@ -77,6 +77,33 @@ void main() {
 
     expect(find.text('Telegram engine could not start'), findsOneWidget);
     expect(find.textContaining('bundled Telegram library'), findsOneWidget);
+
+    await settingsController.save(
+      const AppSettings(
+        apiId: 12345,
+        apiHash: 'test-api-hash',
+        channelIds: <int>[],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+    );
+    telegramClient.emitStep(const AuthStep(AuthStepKind.needsPassword));
+    await tester.pump();
+
+    final passwordField = tester.widget<TextField>(
+      find.byKey(const ValueKey<String>('telegram-two-step-password')),
+    );
+    expect(passwordField.keyboardType, TextInputType.visiblePassword);
+    expect(passwordField.obscureText, isTrue);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('telegram-two-step-password')),
+      'Letters123!',
+    );
+    await tester.tap(find.text('Verify password'));
+    await tester.pump();
+
+    expect(telegramClient.submittedPassword, 'Letters123!');
   });
 }
 
@@ -111,6 +138,7 @@ class _FakeMediaRepository extends MediaRepository {
 class _FakeTelegramClient implements TelegramClient {
   final _authSteps = StreamController<AuthStep>.broadcast();
   final _errors = StreamController<AppException>.broadcast();
+  String? submittedPassword;
 
   @override
   Stream<AuthStep> get authSteps => _authSteps.stream;
@@ -119,6 +147,8 @@ class _FakeTelegramClient implements TelegramClient {
   Stream<AppException> get errors => _errors.stream;
 
   void emitError(AppException error) => _errors.add(error);
+
+  void emitStep(AuthStep step) => _authSteps.add(step);
 
   @override
   Future<void> initialize(AppSettings settings) => Future<void>.value();
@@ -130,7 +160,9 @@ class _FakeTelegramClient implements TelegramClient {
   Future<void> submitCode(String code) => Future<void>.value();
 
   @override
-  Future<void> submitPassword(String password) => Future<void>.value();
+  Future<void> submitPassword(String password) async {
+    submittedPassword = password;
+  }
 
   @override
   Future<List<MediaItem>> listRecentMedia({

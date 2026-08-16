@@ -86,6 +86,7 @@ class AppUpdateService {
 
     return AppUpdateCheckResult(
       currentVersion: installedVersion.display,
+      hasPublishedRelease: releases.isNotEmpty,
       update: newestUpdate,
     );
   }
@@ -198,20 +199,10 @@ class AppUpdateService {
           .transform(utf8.decoder)
           .join()
           .timeout(const Duration(seconds: 15));
-      if (response.statusCode != HttpStatus.ok) {
-        throw AppUpdateException(
-          response.statusCode == HttpStatus.forbidden
-              ? 'GitHub temporarily limited update checks. Try again later.'
-              : 'GitHub could not check for updates (${response.statusCode}).',
-        );
-      }
-      final decoded = jsonDecode(body);
-      if (decoded is! Map) {
-        throw const AppUpdateException(
-          'GitHub returned an invalid update response.',
-        );
-      }
-      return <Object?>[decoded];
+      return decodeGitHubReleaseResponse(
+        statusCode: response.statusCode,
+        body: body,
+      );
     } on AppUpdateException {
       rethrow;
     } on TimeoutException {
@@ -308,4 +299,27 @@ class AppUpdateService {
   static String _cleanText(String value) {
     return value.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
+}
+
+List<Object?> decodeGitHubReleaseResponse({
+  required int statusCode,
+  required String body,
+}) {
+  if (statusCode == HttpStatus.notFound) {
+    return const <Object?>[];
+  }
+  if (statusCode != HttpStatus.ok) {
+    throw AppUpdateException(
+      statusCode == HttpStatus.forbidden
+          ? 'GitHub temporarily limited update checks. Try again later.'
+          : 'GitHub could not check for updates ($statusCode).',
+    );
+  }
+  final decoded = jsonDecode(body);
+  if (decoded is! Map) {
+    throw const AppUpdateException(
+      'GitHub returned an invalid update response.',
+    );
+  }
+  return <Object?>[decoded];
 }

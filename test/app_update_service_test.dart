@@ -16,6 +16,28 @@ void main() {
   });
 
   group('AppUpdateService', () {
+    test('treats a missing stable GitHub release as a normal empty result', () {
+      final releases = decodeGitHubReleaseResponse(
+        statusCode: 404,
+        body: '{"message":"Not Found"}',
+      );
+
+      expect(releases, isEmpty);
+    });
+
+    test('reports that no stable release has been published', () async {
+      final service = AppUpdateService(
+        repository: 'example/teleplayer',
+        installedVersionLoader: () async => '1.1.1',
+        releaseLoader: (_) async => const <Object?>[],
+      );
+
+      final result = await service.checkForUpdate();
+
+      expect(result.hasPublishedRelease, isFalse);
+      expect(result.update, isNull);
+    });
+
     test(
       'selects a newer stable release and the universal Android APK',
       () async {
@@ -48,6 +70,7 @@ void main() {
         final result = await service.checkForUpdate();
 
         expect(result.currentVersion, '1.1.0');
+        expect(result.hasPublishedRelease, isTrue);
         expect(result.update, isNotNull);
         expect(result.update!.version, '1.2.0');
         expect(
