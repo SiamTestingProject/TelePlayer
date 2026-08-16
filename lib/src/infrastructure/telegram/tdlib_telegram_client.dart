@@ -27,7 +27,7 @@ class TdlibTelegramClient implements TelegramClient {
   final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
   final _authSteps = StreamController<AuthStep>.broadcast();
   final _errors = StreamController<AppException>.broadcast();
-  final _fileDownloadQueues = <int, Future<void>>{};
+  final _fileDownloadQueues = <int, Completer<void>>{};
 
   AppSettings? _settings;
   StreamSubscription<Map<String, dynamic>>? _updatesSub;
@@ -356,15 +356,15 @@ class TdlibTelegramClient implements TelegramClient {
     int fileId,
     Future<T> Function() operation,
   ) async {
-    final previous = _fileDownloadQueues[fileId] ?? Future<void>.value();
+    final previous = _fileDownloadQueues[fileId]?.future ?? Future<void>.value();
     final turn = Completer<void>();
-    _fileDownloadQueues[fileId] = turn.future;
+    _fileDownloadQueues[fileId] = turn;
     await previous;
     try {
       return await operation();
     } finally {
       turn.complete();
-      if (identical(_fileDownloadQueues[fileId], turn.future)) {
+      if (identical(_fileDownloadQueues[fileId], turn)) {
         _fileDownloadQueues.remove(fileId);
       }
     }
