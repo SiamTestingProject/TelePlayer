@@ -1,8 +1,8 @@
-#define MyAppName "Telegram Media Player"
-#define MyAppExeName "telegram_media_player.exe"
+#define MyAppName "TelePlayer"
+#define MyAppExeName "teleplayer.exe"
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.0.1"
 #endif
 #ifndef MySourceDir
   #define MySourceDir "..\..\build\windows\x64\runner\Release"
@@ -11,7 +11,7 @@
   #define MyOutputDir "..\..\dist"
 #endif
 #ifndef MyOutputBaseFilename
-  #define MyOutputBaseFilename "TelegramMediaPlayer-Setup"
+  #define MyOutputBaseFilename "TelePlayer-Setup"
 #endif
 #ifndef MySetupIconFile
   #define MySetupIconFile "..\..\windows\runner\resources\app_icon.ico"

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
+import '../../update/application/app_update_controller.dart';
+import '../../update/presentation/app_update_sheet.dart';
 import '../models/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -135,6 +137,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: const Icon(Icons.save_outlined),
                     label: const Text('Save'),
                   ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'TelePlayer',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  _AppUpdateTile(
+                    controller: AppScope.of(context).updateController,
+                    onPressed: _checkForUpdates,
+                  ),
                 ],
               ),
             ),
@@ -170,5 +182,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const SnackBar(content: Text('Settings saved')),
     );
     widget.onSaved?.call();
+  }
+
+  Future<void> _checkForUpdates() async {
+    final controller = AppScope.of(context).updateController;
+    final update = await controller.check();
+    if (!mounted) {
+      return;
+    }
+    if (update != null) {
+      await showAppUpdateSheet(
+        context,
+        controller: controller,
+        update: update,
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          controller.message ?? 'TelePlayer could not check for updates.',
+        ),
+      ),
+    );
+  }
+}
+
+class _AppUpdateTile extends StatelessWidget {
+  const _AppUpdateTile({
+    required this.controller,
+    required this.onPressed,
+  });
+
+  final AppUpdateController controller;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final isChecking = controller.status == AppUpdateStatus.checking;
+        final subtitle = switch (controller.status) {
+          AppUpdateStatus.checking => 'Checking GitHub releases...',
+          AppUpdateStatus.upToDate => controller.message ?? 'TelePlayer is up to date.',
+          AppUpdateStatus.updateAvailable =>
+            controller.message ?? 'A newer TelePlayer release is available.',
+          AppUpdateStatus.error =>
+            controller.message ?? 'The update check failed.',
+          AppUpdateStatus.opening => 'Opening the update download...',
+          AppUpdateStatus.idle => 'Check for a newer GitHub release',
+        };
+        return Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            onTap: controller.isBusy ? null : onPressed,
+            leading: const Icon(Icons.system_update_alt_rounded),
+            title: const Text('App updates'),
+            subtitle: Text(subtitle),
+            trailing: isChecking
+                ? const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                : const Icon(Icons.chevron_right_rounded),
+          ),
+        );
+      },
+    );
   }
 }

@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: TelegramMediaPlayer
+  APP_NAME: TelePlayer
   FLUTTER_VERSION: "3.44.8"
   ANDROID_COMPILE_SDK: "36"
 
@@ -49,6 +49,9 @@ jobs:
       - name: Restore checked-in Dart sources
         run: git checkout -- lib test pubspec.yaml analysis_options.yaml
 
+      - name: Apply TelePlayer Android identity
+        run: python3 tool/configure_app_identity.py --platform android
+
       - name: Configure Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -76,8 +79,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Validate tdlib Android compatibility patch
-        run: python3 -m unittest tool/test_patch_tdlib_android.py
+      - name: Validate build configuration tools
+        run: python3 -m unittest discover -s tool -p "test_*.py"
+
+      - name: Validate release tag matches app version
+        if: github.ref_type == 'tag'
+        run: python3 tool/validate_release_version.py --tag "${{ github.ref_name }}"
 
       - name: Patch tdlib Android build configuration
         run: python3 tool/patch_tdlib_android_namespace.py --compile-sdk "$ANDROID_COMPILE_SDK"
@@ -89,13 +96,13 @@ jobs:
         run: flutter test
 
       - name: Build universal APK
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
 
       - name: Build ABI APKs
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
 
       - name: Build Android App Bundle
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
 
       - name: Rename artifacts
         run: |
@@ -162,8 +169,15 @@ jobs:
       - name: Restore checked-in Dart sources
         run: git checkout -- lib test pubspec.yaml analysis_options.yaml
 
+      - name: Apply TelePlayer Windows identity
+        run: python3 tool/configure_app_identity.py --platform windows
+
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Validate release tag matches app version
+        if: github.ref_type == 'tag'
+        run: python3 tool/validate_release_version.py --tag "${{ github.ref_name }}"
 
       - name: Run static analysis
         run: flutter analyze --fatal-infos
@@ -172,7 +186,7 @@ jobs:
         run: flutter test
 
       - name: Build Windows app
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
 
       - name: Bundle optional TDLib DLL
         shell: pwsh
@@ -218,7 +232,7 @@ jobs:
             $appVersion = "$appVersion.$($versionMatch.Groups[2].Value)"
           }
           $releaseDir = 'build/windows/x64/runner/Release'
-          $exePath = Join-Path $releaseDir 'telegram_media_player.exe'
+          $exePath = Join-Path $releaseDir 'teleplayer.exe'
           $artifactPath = "dist/${{ env.APP_NAME }}-$artifactRef-windows-x64.zip"
           if (-not (Test-Path $exePath)) {
             throw "Windows executable missing"

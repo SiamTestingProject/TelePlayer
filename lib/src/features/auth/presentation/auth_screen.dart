@@ -37,7 +37,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final step = auth.step.kind;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Telegram Media Player'),
+        title: const Text('TelePlayer'),
         actions: [
           IconButton(
             tooltip: 'Settings',

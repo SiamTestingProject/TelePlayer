@@ -1,4 +1,4 @@
-# Telegram Media Player
+# TelePlayer
 
 A Flutter Material 3 app for Android and Windows that signs in to Telegram, browses configured channel media, and plays videos through a local range-aware streaming server.
 
@@ -14,6 +14,7 @@ A Flutter Material 3 app for Android and Windows that signs in to Telegram, brow
 - Media player: `lib/src/features/player`
 - Local cache: `lib/src/core/services/local_cache_service.dart`
 - Settings: `lib/src/features/settings`
+- GitHub release updates: `lib/src/features/update`
 - Models: feature `models` folders
 - Errors: `lib/src/core/errors`
 
@@ -37,11 +38,12 @@ Install Flutter 3.44.8 or newer, then run:
 
 ```bash
 flutter create --platforms=android,windows --project-name telegram_media_player .
+python3 tool/configure_app_identity.py --platform all
 flutter pub get
 python3 tool/patch_tdlib_android_namespace.py --compile-sdk 36
 flutter analyze
 flutter test
-flutter run
+flutter run --dart-define=GITHUB_REPOSITORY=owner/repository
 ```
 
 On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project.
@@ -50,23 +52,38 @@ plugin's `compileSdk` from API 31 to API 36. This is required because current
 AndroidX dependencies need API 34 or newer even though `tdlib` 1.6.0 still
 declares API 31.
 
+## App Updates
+
+TelePlayer checks stable GitHub Releases once after startup. A manual check is
+also available from **Settings > App updates**. When a newer semantic version is
+available, the app shows a draggable Material 3 changelog sheet and opens the
+universal APK on Android or the Inno Setup installer on Windows. If that
+platform asset is missing, it opens the GitHub Release page instead.
+
+The release repository is embedded at build time with
+`--dart-define=GITHUB_REPOSITORY=owner/repository`. GitHub Actions supplies this
+automatically. Android release builds also receive the Internet permission from
+`tool/configure_app_identity.py`.
+
 ## Release
 
 Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Push a version tag such as `v1.0.0` to publish a normal GitHub Release instead.
+Push a version tag such as `v1.1.0` to publish a normal GitHub Release instead.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
-generated files to that release. Output names include:
+generated files to that release. A version tag must match the version in
+`pubspec.yaml`, which prevents the updater from offering the currently installed
+build again. Output names include:
 
-- `TelegramMediaPlayer-v1.0.0.apk`
-- `TelegramMediaPlayer-v1.0.0-arm64.apk`
-- `TelegramMediaPlayer-v1.0.0-armeabi-v7a.apk`
-- `TelegramMediaPlayer-v1.0.0-x86_64.apk`
-- `TelegramMediaPlayer-v1.0.0-aab.aab`
-- `TelegramMediaPlayer-v1.0.0-Setup.exe`
-- `TelegramMediaPlayer-v1.0.0-windows-x64.zip`
+- `TelePlayer-v1.1.0.apk`
+- `TelePlayer-v1.1.0-arm64.apk`
+- `TelePlayer-v1.1.0-armeabi-v7a.apk`
+- `TelePlayer-v1.1.0-x86_64.apk`
+- `TelePlayer-v1.1.0-aab.aab`
+- `TelePlayer-v1.1.0-Setup.exe`
+- `TelePlayer-v1.1.0-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

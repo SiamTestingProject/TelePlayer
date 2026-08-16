@@ -7,16 +7,17 @@ import '../features/auth/presentation/auth_screen.dart';
 import '../features/library/presentation/library_screen.dart';
 import '../features/player/presentation/player_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
+import '../features/update/presentation/app_update_sheet.dart';
 import 'app_scope.dart';
 
-class TelegramMediaPlayerApp extends StatelessWidget {
-  const TelegramMediaPlayerApp({super.key});
+class TelePlayerApp extends StatelessWidget {
+  const TelePlayerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     const seed = Color(0xFF126C71);
     return MaterialApp(
-      title: 'Telegram Media Player',
+      title: 'TelePlayer',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
@@ -40,6 +41,34 @@ class AppHome extends StatefulWidget {
 
 class _AppHomeState extends State<AppHome> {
   int _index = 0;
+  bool _scheduledUpdateCheck = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_scheduledUpdateCheck) {
+      return;
+    }
+    _scheduledUpdateCheck = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_checkForUpdateOnStartup());
+      }
+    });
+  }
+
+  Future<void> _checkForUpdateOnStartup() async {
+    final controller = AppScope.of(context).updateController;
+    final update = await controller.checkOnStartup();
+    if (!mounted || update == null) {
+      return;
+    }
+    await showAppUpdateSheet(
+      context,
+      controller: controller,
+      update: update,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

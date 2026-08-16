@@ -18,6 +18,8 @@ import 'package:telegram_media_player/src/features/player/application/player_con
 import 'package:telegram_media_player/src/features/settings/application/settings_controller.dart';
 import 'package:telegram_media_player/src/features/settings/data/settings_repository.dart';
 import 'package:telegram_media_player/src/features/settings/models/app_settings.dart';
+import 'package:telegram_media_player/src/features/update/application/app_update_controller.dart';
+import 'package:telegram_media_player/src/features/update/data/app_update_service.dart';
 import 'package:telegram_media_player/src/infrastructure/telegram/telegram_client.dart';
 
 void main() {
@@ -33,12 +35,20 @@ void main() {
       settingsController: settingsController,
     );
     final playerController = PlayerController(libraryController);
+    final updateController = AppUpdateController(
+      AppUpdateService(
+        repository: '',
+        installedVersionLoader: () async => '1.1.0',
+        releaseLoader: (_) async => const <Object?>[],
+      ),
+    );
 
     addTearDown(() async {
       playerController.dispose();
       libraryController.dispose();
       authController.dispose();
       settingsController.dispose();
+      updateController.dispose();
       await telegramClient.close();
     });
 
@@ -48,11 +58,12 @@ void main() {
         libraryController: libraryController,
         playerController: playerController,
         settingsController: settingsController,
-        child: const TelegramMediaPlayerApp(),
+        updateController: updateController,
+        child: const TelePlayerApp(),
       ),
     );
 
-    expect(find.text('Telegram Media Player'), findsOneWidget);
+    expect(find.text('TelePlayer'), findsOneWidget);
     expect(find.text('Sign in to Telegram'), findsOneWidget);
     expect(find.byIcon(Icons.settings_outlined), findsWidgets);
 

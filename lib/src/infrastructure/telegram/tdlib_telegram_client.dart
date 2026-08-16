@@ -61,7 +61,7 @@ class TdlibTelegramClient implements TelegramClient {
   }
 
   @override
-  Future<void> submitPhoneNumber(String phoneNumber) {
+  Future<void> submitPhoneNumber(String phoneNumber) async {
     final normalized = phoneNumber.replaceAll(RegExp(r'[\s()\-]'), '');
     if (!RegExp(r'^\+[1-9]\d{5,14}$').hasMatch(normalized)) {
       throw const AppException(
@@ -69,11 +69,13 @@ class TdlibTelegramClient implements TelegramClient {
         message: 'Enter a phone number in international format, for example +15551234567.',
       );
     }
-    return _gateway.send(td.SetAuthenticationPhoneNumber(phoneNumber: normalized));
+    await _sendAuthenticationRequest(
+      td.SetAuthenticationPhoneNumber(phoneNumber: normalized),
+    );
   }
 
   @override
-  Future<void> submitCode(String code) {
+  Future<void> submitCode(String code) async {
     final normalized = code.trim();
     if (normalized.isEmpty) {
       throw const AppException(
@@ -81,18 +83,62 @@ class TdlibTelegramClient implements TelegramClient {
         message: 'Enter the login code sent by Telegram.',
       );
     }
-    return _gateway.send(td.CheckAuthenticationCode(code: normalized));
+    await _sendAuthenticationRequest(td.CheckAuthenticationCode(code: normalized));
   }
 
   @override
-  Future<void> submitPassword(String password) {
+  Future<void> submitPassword(String password) async {
     if (password.isEmpty) {
       throw const AppException(
         AppErrorCode.telegramAuthFailed,
         message: 'Enter your Telegram two-step verification password.',
       );
     }
-    return _gateway.send(td.CheckAuthenticationPassword(password: password));
+    await _sendAuthenticationRequest(
+      td.CheckAuthenticationPassword(password: password),
+    );
+  }
+
+  Future<void> _sendAuthenticationRequest(td.TdFunction request) async {
+    try {
+      await _gateway.send(
+        request,
+        timeout: const Duration(seconds: 45),
+      );
+      await _refreshAuthorizationState();
+    } on AppException catch (error) {
+      if (error.code == AppErrorCode.telegramApi ||
+          error.code == AppErrorCode.expiredSession) {
+        throw AppException(
+          AppErrorCode.telegramAuthFailed,
+          message: _authenticationErrorMessage(error.message),
+          cause: error,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  String _authenticationErrorMessage(String? message) {
+    final normalized = message?.toUpperCase() ?? '';
+    if (normalized.contains('PHONE_NUMBER_INVALID')) {
+      return 'Telegram rejected this phone number. Check the country code and number.';
+    }
+    if (normalized.contains('PHONE_NUMBER_BANNED')) {
+      return 'Telegram has restricted this phone number from signing in.';
+    }
+    if (normalized.contains('PHONE_CODE_EXPIRED')) {
+      return 'The Telegram login code has expired. Request a new code.';
+    }
+    if (normalized.contains('PHONE_CODE_INVALID')) {
+      return 'The Telegram login code is incorrect.';
+    }
+    if (normalized.contains('PASSWORD_HASH_INVALID')) {
+      return 'The Telegram two-step verification password is incorrect.';
+    }
+    return message?.trim().isNotEmpty == true
+        ? message!.trim()
+        : 'Telegram could not continue sign-in. Please try again.';
   }
 
   @override
@@ -321,7 +367,7 @@ class TdlibTelegramClient implements TelegramClient {
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.0.0',
+        applicationVersion: '1.0.1',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),

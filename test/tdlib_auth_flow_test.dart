@@ -28,6 +28,16 @@ void main() {
     );
   });
 
+  test('preserves TDLib response metadata used to complete requests', () {
+    final json = tdObjectToJsonWithMetadata(
+      const td.Ok(extra: 'request-42', clientId: 7),
+    );
+
+    expect(json['@type'], 'ok');
+    expect(json['@extra'], 'request-42');
+    expect(json['@client_id'], 7);
+  });
+
   test('initialization requests and advances the TDLib authorization state', () async {
     final supportDirectory = await Directory.systemTemp.createTemp('teleplayer-auth-test-');
     final gateway = _FakeTdlibGateway();
@@ -76,6 +86,62 @@ void main() {
     );
     expect(gateway.requestTypes, isEmpty);
   });
+
+  test('phone submission refreshes and advances to the code step', () async {
+    final gateway = _FakeTdlibGateway(
+      authorizationStates: <Map<String, dynamic>>[
+        <String, dynamic>{'@type': 'authorizationStateWaitCode'},
+      ],
+    );
+    final client = TdlibTelegramClient(gateway);
+    final steps = <AuthStep>[];
+    final subscription = client.authSteps.listen(steps.add);
+
+    addTearDown(() async {
+      await subscription.cancel();
+      await client.close();
+    });
+
+    await client.submitPhoneNumber('+8801620262057');
+
+    expect(
+      gateway.requestTypes,
+      <String>[
+        'setAuthenticationPhoneNumber',
+        'getAuthorizationState',
+      ],
+    );
+    expect(steps.last.kind, AuthStepKind.needsCode);
+  });
+
+  test('maps TDLib phone errors to an actionable sign-in failure', () async {
+    final gateway = _FakeTdlibGateway(
+      requestError: const AppException(
+        AppErrorCode.telegramApi,
+        message: 'PHONE_NUMBER_INVALID',
+      ),
+    );
+    final client = TdlibTelegramClient(gateway);
+
+    addTearDown(client.close);
+
+    await expectLater(
+      client.submitPhoneNumber('+8801620262057'),
+      throwsA(
+        isA<AppException>()
+            .having(
+              (error) => error.code,
+              'code',
+              AppErrorCode.telegramAuthFailed,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              contains('country code'),
+            ),
+      ),
+    );
+  });
 }
 
 const _configuredSettings = AppSettings(
@@ -87,11 +153,26 @@ const _configuredSettings = AppSettings(
 );
 
 class _FakeTdlibGateway extends TdlibGateway {
+  _FakeTdlibGateway({
+    List<Map<String, dynamic>>? authorizationStates,
+    this.requestError,
+  })
+      : _authorizationStates = authorizationStates ??
+            <Map<String, dynamic>>[
+              <String, dynamic>{
+                '@type': 'authorizationStateWaitTdlibParameters',
+              },
+              <String, dynamic>{
+                '@type': 'authorizationStateWaitPhoneNumber',
+              },
+            ];
+
   final _updates = StreamController<Map<String, dynamic>>.broadcast();
   final requestTypes = <String>[];
+  final List<Map<String, dynamic>> _authorizationStates;
+  final AppException? requestError;
 
   bool _initialized = false;
-  int _authorizationStateRequests = 0;
 
   @override
   Stream<Map<String, dynamic>> get updates => _updates.stream;
@@ -111,16 +192,14 @@ class _FakeTdlibGateway extends TdlibGateway {
   }) async {
     final type = request.getConstructor();
     requestTypes.add(type);
+    if (type != 'getAuthorizationState' && requestError != null) {
+      throw requestError!;
+    }
     if (type == 'getAuthorizationState') {
-      _authorizationStateRequests++;
-      if (_authorizationStateRequests == 1) {
-        return <String, dynamic>{
-          '@type': 'authorizationStateWaitTdlibParameters',
-        };
+      if (_authorizationStates.length > 1) {
+        return _authorizationStates.removeAt(0);
       }
-      return <String, dynamic>{
-        '@type': 'authorizationStateWaitPhoneNumber',
-      };
+      return _authorizationStates.single;
     }
     return <String, dynamic>{'@type': 'ok'};
   }

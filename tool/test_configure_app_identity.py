@@ -1,0 +1,68 @@
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from configure_app_identity import configure_android, configure_windows
+
+
+class ConfigureAppIdentityTest(unittest.TestCase):
+    def test_configures_android_display_name_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "android/app/src/main/AndroidManifest.xml"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                '<application android:label="telegram_media_player">\n</application>\n',
+                encoding="utf-8",
+            )
+
+            configure_android(root)
+            configure_android(root)
+
+            manifest_text = manifest.read_text()
+            self.assertIn('android:label="TelePlayer"', manifest_text)
+            self.assertEqual(
+                manifest_text.count('android.permission.INTERNET'),
+                1,
+            )
+
+    def test_configures_windows_product_and_binary_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            windows = root / "windows"
+            runner = windows / "runner"
+            runner.mkdir(parents=True)
+            (windows / "CMakeLists.txt").write_text(
+                'set(BINARY_NAME "telegram_media_player")\n',
+                encoding="utf-8",
+            )
+            (runner / "main.cpp").write_text(
+                'window.CreateAndShow(L"telegram_media_player", origin, size);\n',
+                encoding="utf-8",
+            )
+            runner_rc = runner / "Runner.rc"
+            runner_rc.write_text(
+                'VALUE "FileDescription", "telegram_media_player" "\\0"\n'
+                'VALUE "InternalName", "telegram_media_player" "\\0"\n'
+                'VALUE "OriginalFilename", "telegram_media_player.exe" "\\0"\n'
+                'VALUE "ProductName", "telegram_media_player" "\\0"\n',
+                encoding="utf-8",
+            )
+
+            configure_windows(root)
+            configure_windows(root)
+
+            self.assertIn('set(BINARY_NAME "teleplayer")', (windows / "CMakeLists.txt").read_text())
+            self.assertIn('L"TelePlayer"', (runner / "main.cpp").read_text())
+            resource_text = runner_rc.read_text()
+            self.assertIn('VALUE "FileDescription", "TelePlayer"', resource_text)
+            self.assertIn('VALUE "InternalName", "teleplayer"', resource_text)
+            self.assertIn('VALUE "OriginalFilename", "teleplayer.exe"', resource_text)
+            self.assertIn('VALUE "ProductName", "TelePlayer"', resource_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

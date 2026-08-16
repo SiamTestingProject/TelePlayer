@@ -11,6 +11,8 @@ import '../features/library/data/media_repository.dart';
 import '../features/player/application/player_controller.dart';
 import '../features/settings/application/settings_controller.dart';
 import '../features/settings/data/settings_repository.dart';
+import '../features/update/application/app_update_controller.dart';
+import '../features/update/data/app_update_service.dart';
 import '../infrastructure/telegram/tdlib_gateway.dart';
 import '../infrastructure/telegram/tdlib_telegram_client.dart';
 import 'app.dart';
@@ -22,12 +24,14 @@ class AppBootstrap {
     required this.libraryController,
     required this.playerController,
     required this.settingsController,
+    required this.updateController,
   });
 
   final AuthController authController;
   final MediaLibraryController libraryController;
   final PlayerController playerController;
   final SettingsController settingsController;
+  final AppUpdateController updateController;
 
   static Future<AppBootstrap> create() async {
     final settingsController = SettingsController(
@@ -48,6 +52,7 @@ class AppBootstrap {
       settingsController: settingsController,
     );
     final playerController = PlayerController(libraryController);
+    final updateController = AppUpdateController(AppUpdateService());
 
     if (settingsController.settings.hasTelegramConfiguration) {
       unawaited(authController.initialize());
@@ -58,6 +63,7 @@ class AppBootstrap {
       libraryController: libraryController,
       playerController: playerController,
       settingsController: settingsController,
+      updateController: updateController,
     );
   }
 
@@ -67,7 +73,8 @@ class AppBootstrap {
       libraryController: libraryController,
       playerController: playerController,
       settingsController: settingsController,
-      child: const TelegramMediaPlayerApp(),
+      updateController: updateController,
+      child: const TelePlayerApp(),
     );
   }
 }

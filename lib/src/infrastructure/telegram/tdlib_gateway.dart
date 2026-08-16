@@ -23,6 +23,17 @@ String? resolveTdjsonLibraryPath({
   };
 }
 
+Map<String, dynamic> tdObjectToJsonWithMetadata(TdObject object) {
+  final json = Map<String, dynamic>.from(object.toJson());
+  if (object.extra != null) {
+    json['@extra'] = object.extra;
+  }
+  if (object.clientId != null) {
+    json['@client_id'] = object.clientId;
+  }
+  return json;
+}
+
 class TdlibGateway {
   final _updates = StreamController<Map<String, dynamic>>.broadcast();
   final _responses = <String, Completer<Map<String, dynamic>>>{};
@@ -99,7 +110,7 @@ class TdlibGateway {
         if (object == null) {
           break;
         }
-        final json = Map<String, dynamic>.from(object.toJson());
+        final json = tdObjectToJsonWithMetadata(object);
         final extra = json['@extra']?.toString();
         if (extra != null && _responses.containsKey(extra)) {
           final completer = _responses.remove(extra)!;
