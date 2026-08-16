@@ -24,10 +24,18 @@ class ErrorMessageMapper {
           body: 'Check your connection and try again.',
           actionLabel: 'Retry',
         );
+      case AppErrorCode.telegramInitialization:
+        return FriendlyError(
+          title: 'Telegram engine could not start',
+          body: appError.message ??
+              'The Telegram library could not be loaded. Reinstall the app and try again.',
+          actionLabel: 'Retry',
+        );
       case AppErrorCode.telegramAuthFailed:
-        return const FriendlyError(
+        return FriendlyError(
           title: 'Telegram sign-in failed',
-          body: 'Check the phone number, code, or two-step verification password.',
+          body: appError.message ??
+              'Check the phone number, code, or two-step verification password.',
         );
       case AppErrorCode.expiredSession:
         return const FriendlyError(

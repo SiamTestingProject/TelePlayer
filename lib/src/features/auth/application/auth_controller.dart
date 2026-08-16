@@ -18,11 +18,17 @@ class AuthController extends ChangeNotifier {
       _error = null;
       notifyListeners();
     });
+    _authErrorSubscription = _repository.errors.listen((error) {
+      _error = error;
+      _isBusy = false;
+      notifyListeners();
+    });
   }
 
   final AuthRepository _repository;
   final SettingsController _settingsController;
   late final StreamSubscription<AuthStep> _authSubscription;
+  late final StreamSubscription<AppException> _authErrorSubscription;
 
   AuthStep _step = const AuthStep(AuthStepKind.unknown);
   bool _isBusy = false;
@@ -40,9 +46,10 @@ class AuthController extends ChangeNotifier {
     try {
       await _repository.initialize(_settingsController.settings);
     } catch (error) {
-      _error = error is AppException
-          ? error
-          : AppException(AppErrorCode.telegramAuthFailed, cause: error);
+      _error = _normalizeError(
+        error,
+        fallback: AppErrorCode.telegramInitialization,
+      );
     } finally {
       _isBusy = false;
       notifyListeners();
@@ -62,18 +69,47 @@ class AuthController extends ChangeNotifier {
     try {
       await action();
     } catch (error) {
-      _error = error is AppException
-          ? error
-          : AppException(AppErrorCode.telegramAuthFailed, cause: error);
+      _error = _normalizeError(
+        error,
+        fallback: AppErrorCode.telegramAuthFailed,
+      );
     } finally {
       _isBusy = false;
       notifyListeners();
     }
   }
 
+  AppException _normalizeError(
+    Object error, {
+    required AppErrorCode fallback,
+  }) {
+    if (error is AppException) {
+      return error;
+    }
+    final text = error.toString();
+    final normalized = text.toLowerCase();
+    if (normalized.contains('socket') ||
+        normalized.contains('network') ||
+        normalized.contains('connection')) {
+      return AppException(AppErrorCode.noInternet, cause: error);
+    }
+    if (normalized.contains('dynamiclibrary') ||
+        normalized.contains('shared object') ||
+        normalized.contains('tdjson') ||
+        normalized.contains('symbol')) {
+      return AppException(
+        AppErrorCode.telegramInitialization,
+        message: 'The Telegram library could not be loaded on this device.',
+        cause: error,
+      );
+    }
+    return AppException(fallback, cause: error);
+  }
+
   @override
   void dispose() {
     _authSubscription.cancel();
+    _authErrorSubscription.cancel();
     super.dispose();
   }
 }

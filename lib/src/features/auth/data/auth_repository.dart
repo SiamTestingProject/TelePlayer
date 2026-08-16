@@ -9,6 +9,7 @@ class AuthRepository {
   final TelegramClient _client;
 
   Stream<AuthStep> get authSteps => _client.authSteps;
+  Stream<AppException> get errors => _client.errors;
 
   Future<void> initialize(AppSettings settings) async {
     if (!settings.hasTelegramConfiguration) {

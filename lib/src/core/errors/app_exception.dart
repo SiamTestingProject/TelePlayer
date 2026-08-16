@@ -1,5 +1,6 @@
 enum AppErrorCode {
   noInternet,
+  telegramInitialization,
   telegramAuthFailed,
   expiredSession,
   deletedMessage,

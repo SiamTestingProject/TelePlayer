@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
+import '../../core/errors/app_exception.dart';
 import '../../features/auth/models/auth_models.dart';
 import '../../features/library/models/media_item.dart';
 import '../../features/settings/models/app_settings.dart';
 
 abstract interface class TelegramClient {
   Stream<AuthStep> get authSteps;
+  Stream<AppException> get errors;
 
   Future<void> initialize(AppSettings settings);
   Future<void> submitPhoneNumber(String phoneNumber);

@@ -104,7 +104,7 @@ jobs:
           SAFE_REF="${RAW_REF//\//-}"
           SAFE_REF="${SAFE_REF// /-}"
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            ARTIFACT_REF="${RAW_REF}"
+            ARTIFACT_REF="${SAFE_REF}"
           else
             ARTIFACT_REF="ci-${SAFE_REF}-${GITHUB_SHA::7}"
           fi
@@ -134,15 +134,6 @@ jobs:
           name: android-artifacts-${{ github.run_number }}
           path: dist/*
           if-no-files-found: error
-
-      - name: Create or update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
-          name: ${{ env.APP_NAME }} ${{ github.event.release.tag_name || github.ref_name }}
-          files: dist/*
-          fail_on_unmatched_files: true
 
   windows:
     name: Build Windows artifact
@@ -203,7 +194,7 @@ jobs:
             throw "tdjson.dll was not written"
           }
 
-      - name: Rename Windows artifact
+      - name: Package portable Windows build
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -211,9 +202,20 @@ jobs:
           $safeRef = $rawRef -replace '[\\/:\*\?"<>\|\s]+', '-'
           $sha = '${{ github.sha }}'
           if ('${{ github.ref_type }}' -eq 'tag') {
-            $artifactRef = $rawRef
+            $artifactRef = $safeRef
           } else {
             $artifactRef = "ci-$safeRef-$($sha.Substring(0, 7))"
+          }
+          $versionMatch = [regex]::Match(
+            (Get-Content pubspec.yaml -Raw),
+            '(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+([0-9]+))?\s*$'
+          )
+          if (-not $versionMatch.Success) {
+            throw "A numeric Flutter version was not found in pubspec.yaml"
+          }
+          $appVersion = $versionMatch.Groups[1].Value
+          if ($versionMatch.Groups[2].Success) {
+            $appVersion = "$appVersion.$($versionMatch.Groups[2].Value)"
           }
           $releaseDir = 'build/windows/x64/runner/Release'
           $exePath = Join-Path $releaseDir 'telegram_media_player.exe'
@@ -226,7 +228,65 @@ jobs:
           if (-not (Test-Path $artifactPath)) {
             throw "Windows ZIP missing"
           }
+          "ARTIFACT_REF=$artifactRef" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_VERSION=$appVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WINDOWS_RELEASE_DIR=$releaseDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Get-ChildItem dist
+
+      - name: Build installable Windows EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $compilerCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          )
+          $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $iscc = if ($isccCommand) {
+            $isccCommand.Source
+          } else {
+            $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) {
+            Write-Host "Inno Setup is not installed on this runner; installing it with Chocolatey."
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              throw "Chocolatey could not install Inno Setup"
+            }
+            $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+            $iscc = if ($isccCommand) {
+              $isccCommand.Source
+            } else {
+              $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+            }
+          }
+          if (-not $iscc) {
+            throw "Inno Setup compiler was not found"
+          }
+
+          $sourceDir = (Resolve-Path $env:WINDOWS_RELEASE_DIR).Path
+          $outputDir = (Resolve-Path 'dist').Path
+          $iconFile = (Resolve-Path 'windows/runner/resources/app_icon.ico').Path
+          $outputBaseName = "$env:APP_NAME-$env:ARTIFACT_REF-Setup"
+          $definitions = @(
+            "/DMyAppVersion=$env:APP_VERSION",
+            "/DMySourceDir=$sourceDir",
+            "/DMyOutputDir=$outputDir",
+            "/DMyOutputBaseFilename=$outputBaseName",
+            "/DMySetupIconFile=$iconFile"
+          )
+          & $iscc @definitions 'installer/windows/TelePlayer.iss'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE"
+          }
+
+          $installerPath = Join-Path $outputDir "$outputBaseName.exe"
+          if (-not (Test-Path $installerPath)) {
+            throw "Windows installer EXE missing: $installerPath"
+          }
+          Get-Item $installerPath
 
       - name: Upload Windows workflow artifacts
         uses: actions/upload-artifact@v4
@@ -235,11 +295,65 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  release:
+    name: Publish all GitHub Release assets
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Select release name and tag
+        shell: bash
+        env:
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            RELEASE_TAG="$EVENT_RELEASE_TAG"
+            RELEASE_NAME="$APP_NAME $EVENT_RELEASE_TAG"
+            RELEASE_PRERELEASE="${EVENT_RELEASE_PRERELEASE:-false}"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+            RELEASE_NAME="$APP_NAME $GITHUB_REF_NAME"
+            RELEASE_PRERELEASE="false"
+          else
+            RELEASE_TAG="build-$GITHUB_RUN_NUMBER"
+            RELEASE_NAME="$APP_NAME Build $GITHUB_RUN_NUMBER ($GITHUB_REF_NAME)"
+            RELEASE_PRERELEASE="true"
+          fi
+          test -n "$RELEASE_TAG"
+          {
+            echo "RELEASE_TAG=$RELEASE_TAG"
+            echo "RELEASE_NAME=$RELEASE_NAME"
+            echo "RELEASE_PRERELEASE=$RELEASE_PRERELEASE"
+          } >> "$GITHUB_ENV"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*-artifacts-${{ github.run_number }}"
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pattern in '*.exe' '*.zip' '*.apk' '*.aab'; do
+            compgen -G "release-assets/$pattern" > /dev/null || {
+              echo "Required release asset is missing: $pattern"
+              exit 1
+            }
+          done
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
+
       - name: Create or update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
-          name: ${{ env.APP_NAME }} ${{ github.event.release.tag_name || github.ref_name }}
-          files: dist/*
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ env.RELEASE_PRERELEASE }}
+          generate_release_notes: true
+          files: release-assets/*
           fail_on_unmatched_files: true

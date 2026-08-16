@@ -52,13 +52,28 @@ declares API 31.
 
 ## Release
 
-Every branch push runs GitHub Actions for Android and Windows, then stores compiled outputs as workflow artifacts.
+Every branch push and manual workflow run builds Android and Windows. After both
+platform jobs finish successfully, one release job downloads all outputs and
+publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Create a tag such as `v1.0.0` and push it to publish a GitHub Release. GitHub Actions will build and upload release artifacts named like:
+Push a version tag such as `v1.0.0` to publish a normal GitHub Release instead.
+Publishing a GitHub Release manually also rebuilds the project and attaches all
+generated files to that release. Output names include:
 
 - `TelegramMediaPlayer-v1.0.0.apk`
 - `TelegramMediaPlayer-v1.0.0-arm64.apk`
+- `TelegramMediaPlayer-v1.0.0-armeabi-v7a.apk`
+- `TelegramMediaPlayer-v1.0.0-x86_64.apk`
 - `TelegramMediaPlayer-v1.0.0-aab.aab`
+- `TelegramMediaPlayer-v1.0.0-Setup.exe`
 - `TelegramMediaPlayer-v1.0.0-windows-x64.zip`
 
-The workflow can also be started manually from the GitHub Actions tab. It fails on dependency install, analysis, tests, Android or Windows build, artifact rename, packaging, workflow artifact upload, or release upload errors.
+The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
+installs the complete Flutter release, creates Start Menu and optional desktop
+shortcuts, registers an uninstaller, and can launch the app when setup finishes.
+The Windows ZIP remains available as a portable alternative.
+
+The workflow fails if dependency installation, analysis, tests, an Android or
+Windows build, installer generation, packaging, artifact aggregation, or release
+upload fails. GitHub Release publishing happens only after both platform jobs
+succeed, so a release cannot contain only one platform's files.

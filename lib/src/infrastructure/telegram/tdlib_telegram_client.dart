@@ -14,17 +14,29 @@ import '../../features/settings/models/app_settings.dart';
 import 'tdlib_gateway.dart';
 import 'telegram_client.dart';
 
+typedef ApplicationSupportDirectoryProvider = Future<io.Directory> Function();
+
 class TdlibTelegramClient implements TelegramClient {
-  TdlibTelegramClient(this._gateway);
+  TdlibTelegramClient(
+    this._gateway, {
+    ApplicationSupportDirectoryProvider? applicationSupportDirectory,
+  }) : _applicationSupportDirectory =
+            applicationSupportDirectory ?? getApplicationSupportDirectory;
 
   final TdlibGateway _gateway;
+  final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
   final _authSteps = StreamController<AuthStep>.broadcast();
+  final _errors = StreamController<AppException>.broadcast();
 
   AppSettings? _settings;
   StreamSubscription<Map<String, dynamic>>? _updatesSub;
+  Future<void>? _tdlibParametersFuture;
 
   @override
   Stream<AuthStep> get authSteps => _authSteps.stream;
+
+  @override
+  Stream<AppException> get errors => _errors.stream;
 
   @override
   Future<void> initialize(AppSettings settings) async {
@@ -34,22 +46,52 @@ class TdlibTelegramClient implements TelegramClient {
     }
     _settings = settings;
     await _updatesSub?.cancel();
-    _updatesSub = _gateway.updates.listen(_handleUpdate);
+    _updatesSub = _gateway.updates.listen(
+      _handleUpdate,
+      onError: (Object error, StackTrace stackTrace) {
+        _emitError(_normalizeError(error));
+      },
+    );
+    final startingNewClient = !_gateway.isInitialized;
     await _gateway.initialize(tdjsonPath: settings.windowsTdjsonPath);
+    if (startingNewClient) {
+      _tdlibParametersFuture = null;
+    }
+    await _refreshAuthorizationState();
   }
 
   @override
   Future<void> submitPhoneNumber(String phoneNumber) {
-    return _gateway.send(td.SetAuthenticationPhoneNumber(phoneNumber: phoneNumber));
+    final normalized = phoneNumber.replaceAll(RegExp(r'[\s()\-]'), '');
+    if (!RegExp(r'^\+[1-9]\d{5,14}$').hasMatch(normalized)) {
+      throw const AppException(
+        AppErrorCode.telegramAuthFailed,
+        message: 'Enter a phone number in international format, for example +15551234567.',
+      );
+    }
+    return _gateway.send(td.SetAuthenticationPhoneNumber(phoneNumber: normalized));
   }
 
   @override
   Future<void> submitCode(String code) {
-    return _gateway.send(td.CheckAuthenticationCode(code: code));
+    final normalized = code.trim();
+    if (normalized.isEmpty) {
+      throw const AppException(
+        AppErrorCode.telegramAuthFailed,
+        message: 'Enter the login code sent by Telegram.',
+      );
+    }
+    return _gateway.send(td.CheckAuthenticationCode(code: normalized));
   }
 
   @override
   Future<void> submitPassword(String password) {
+    if (password.isEmpty) {
+      throw const AppException(
+        AppErrorCode.telegramAuthFailed,
+        message: 'Enter your Telegram two-step verification password.',
+      );
+    }
     return _gateway.send(td.CheckAuthenticationPassword(password: password));
   }
 
@@ -153,30 +195,103 @@ class TdlibTelegramClient implements TelegramClient {
     if (update['@type'] != 'updateAuthorizationState') {
       return;
     }
-    final state = Map<String, dynamic>.from(update['authorization_state'] as Map);
+    final rawState = update['authorization_state'];
+    if (rawState is! Map) {
+      _emitError(
+        const AppException(
+          AppErrorCode.telegramApi,
+          message: 'Telegram sent an invalid authorization update.',
+        ),
+      );
+      return;
+    }
+    final state = Map<String, dynamic>.from(rawState);
+    unawaited(_handleAuthorizationUpdate(state));
+  }
+
+  Future<void> _handleAuthorizationUpdate(Map<String, dynamic> state) async {
+    try {
+      await _processAuthorizationState(state);
+    } catch (error) {
+      _emitError(_normalizeError(error));
+    }
+  }
+
+  Future<void> _refreshAuthorizationState() async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      final state = await _gateway.send(const td.GetAuthorizationState());
+      final needsRefresh = await _processAuthorizationState(state);
+      if (!needsRefresh) {
+        return;
+      }
+    }
+    throw const AppException(
+      AppErrorCode.telegramInitialization,
+      message: 'Telegram did not finish preparing the sign-in screen. Please try again.',
+    );
+  }
+
+  Future<bool> _processAuthorizationState(Map<String, dynamic> state) async {
     switch (state['@type']) {
       case 'authorizationStateWaitTdlibParameters':
-        unawaited(_sendTdlibParameters());
-        break;
+        await _ensureTdlibParameters();
+        return true;
       case 'authorizationStateWaitPhoneNumber':
         _emitAuth(const AuthStep(AuthStepKind.needsPhone));
-        break;
+        return false;
       case 'authorizationStateWaitCode':
         _emitAuth(const AuthStep(AuthStepKind.needsCode));
-        break;
+        return false;
       case 'authorizationStateWaitPassword':
         _emitAuth(const AuthStep(AuthStepKind.needsPassword));
-        break;
+        return false;
       case 'authorizationStateReady':
         _emitAuth(const AuthStep(AuthStepKind.ready));
-        break;
+        return false;
       case 'authorizationStateClosed':
       case 'authorizationStateClosing':
       case 'authorizationStateLoggingOut':
         _emitAuth(const AuthStep(AuthStepKind.expired));
-        break;
+        return false;
+      case 'authorizationStateWaitEmailAddress':
+      case 'authorizationStateWaitEmailCode':
+        throw const AppException(
+          AppErrorCode.telegramAuthFailed,
+          message: 'Telegram requires email verification for this account. Complete sign-in in an official Telegram app, then try again.',
+        );
+      case 'authorizationStateWaitOtherDeviceConfirmation':
+        throw const AppException(
+          AppErrorCode.telegramAuthFailed,
+          message: 'Telegram requires confirmation from another signed-in device. Approve the login there, then retry.',
+        );
+      case 'authorizationStateWaitRegistration':
+        throw const AppException(
+          AppErrorCode.telegramAuthFailed,
+          message: 'This phone number needs a new Telegram account. Register it in an official Telegram app first.',
+        );
       default:
-        _emitAuth(const AuthStep(AuthStepKind.unknown));
+        throw AppException(
+          AppErrorCode.telegramApi,
+          message: 'Unsupported Telegram authorization state: ${state['@type'] ?? 'unknown'}.',
+        );
+    }
+  }
+
+  Future<void> _ensureTdlibParameters() async {
+    final pending = _tdlibParametersFuture;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    final operation = _sendTdlibParameters();
+    _tdlibParametersFuture = operation;
+    try {
+      await operation;
+    } catch (_) {
+      if (identical(_tdlibParametersFuture, operation)) {
+        _tdlibParametersFuture = null;
+      }
+      rethrow;
     }
   }
 
@@ -186,7 +301,7 @@ class TdlibTelegramClient implements TelegramClient {
       _emitAuth(const AuthStep(AuthStepKind.needsConfiguration));
       return;
     }
-    final baseDir = await getApplicationSupportDirectory();
+    final baseDir = await _applicationSupportDirectory();
     final databaseDir = io.Directory('${baseDir.path}/tdlib-db');
     final filesDir = io.Directory('${baseDir.path}/tdlib-files');
     await databaseDir.create(recursive: true);
@@ -373,10 +488,44 @@ class TdlibTelegramClient implements TelegramClient {
     }
   }
 
+  void _emitError(AppException error) {
+    if (!_errors.isClosed) {
+      _errors.add(error);
+    }
+  }
+
+  AppException _normalizeError(Object error) {
+    if (error is AppException) {
+      return error;
+    }
+    final normalized = error.toString().toLowerCase();
+    if (normalized.contains('socket') ||
+        normalized.contains('network') ||
+        normalized.contains('connection')) {
+      return AppException(AppErrorCode.noInternet, cause: error);
+    }
+    if (normalized.contains('dynamiclibrary') ||
+        normalized.contains('shared object') ||
+        normalized.contains('tdjson') ||
+        normalized.contains('symbol')) {
+      return AppException(
+        AppErrorCode.telegramInitialization,
+        message: 'The Telegram library could not be loaded on this device.',
+        cause: error,
+      );
+    }
+    return AppException(
+      AppErrorCode.telegramApi,
+      message: 'Telegram sign-in stopped unexpectedly. Please try again.',
+      cause: error,
+    );
+  }
+
   @override
   Future<void> close() async {
     await _updatesSub?.cancel();
     await _authSteps.close();
+    await _errors.close();
     await _gateway.close();
   }
 }

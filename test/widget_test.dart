@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegram_media_player/src/app/app.dart';
 import 'package:telegram_media_player/src/app/app_scope.dart';
+import 'package:telegram_media_player/src/core/errors/app_exception.dart';
 import 'package:telegram_media_player/src/core/services/local_streaming_server.dart';
 import 'package:telegram_media_player/src/core/services/secure_config_store.dart';
 import 'package:telegram_media_player/src/features/auth/application/auth_controller.dart';
@@ -54,6 +55,17 @@ void main() {
     expect(find.text('Telegram Media Player'), findsOneWidget);
     expect(find.text('Sign in to Telegram'), findsOneWidget);
     expect(find.byIcon(Icons.settings_outlined), findsWidgets);
+
+    telegramClient.emitError(
+      const AppException(
+        AppErrorCode.telegramInitialization,
+        message: 'The bundled Telegram library could not be loaded.',
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Telegram engine could not start'), findsOneWidget);
+    expect(find.textContaining('bundled Telegram library'), findsOneWidget);
   });
 }
 
@@ -87,9 +99,15 @@ class _FakeMediaRepository extends MediaRepository {
 
 class _FakeTelegramClient implements TelegramClient {
   final _authSteps = StreamController<AuthStep>.broadcast();
+  final _errors = StreamController<AppException>.broadcast();
 
   @override
   Stream<AuthStep> get authSteps => _authSteps.stream;
+
+  @override
+  Stream<AppException> get errors => _errors.stream;
+
+  void emitError(AppException error) => _errors.add(error);
 
   @override
   Future<void> initialize(AppSettings settings) => Future<void>.value();
@@ -128,5 +146,6 @@ class _FakeTelegramClient implements TelegramClient {
   @override
   Future<void> close() async {
     await _authSteps.close();
+    await _errors.close();
   }
 }
