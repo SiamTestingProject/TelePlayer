@@ -9,7 +9,7 @@ import '../models/media_item.dart';
 typedef CacheDirectoryProvider = Future<Directory> Function();
 
 class ChannelCatalogCache {
-  static const int _artworkCacheRevision = 2;
+  static const int _artworkCacheRevision = 3;
 
   ChannelCatalogCache({CacheDirectoryProvider? directoryProvider})
       : _directoryProvider =

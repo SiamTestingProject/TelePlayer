@@ -11,6 +11,7 @@ class MediaArtwork extends StatelessWidget {
     required this.libraryController,
     this.borderRadius = 22,
     this.iconSize = 36,
+    this.highQuality = false,
     super.key,
   });
 
@@ -18,13 +19,17 @@ class MediaArtwork extends StatelessWidget {
   final MediaLibraryController libraryController;
   final double borderRadius;
   final double iconSize;
+  final bool highQuality;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: FutureBuilder<Uint8List?>(
-        future: libraryController.thumbnailFor(item),
+        future: libraryController.thumbnailFor(
+          item,
+          highQuality: highQuality,
+        ),
         builder: (context, snapshot) {
           final bytes = snapshot.data;
           if (bytes != null && bytes.isNotEmpty) {

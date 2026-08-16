@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../../../core/errors/app_exception.dart';
 import '../../../core/services/local_streaming_server.dart';
+import '../../../core/utils/embedded_artwork.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../settings/models/app_settings.dart';
 import '../models/channel_cache_progress.dart';
@@ -160,6 +161,23 @@ class MediaRepository {
     };
   }
 
+  Future<AudioTechnicalMetadata?> loadTechnicalMetadata(MediaItem item) async {
+    final client = _telegramClient;
+    if (client is! AudioTechnicalMetadataProvider) {
+      return null;
+    }
+    try {
+      return await client.loadTechnicalMetadata(item);
+    } on AppException catch (error) {
+      if (!_isRecoverableThumbnailFailure(error)) {
+        rethrow;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Uri> streamUriFor(MediaItem item) {
     if (item.kind != MediaKind.audio) {
       return Future<Uri>.error(
@@ -180,13 +198,11 @@ class MediaRepository {
   Future<Uint8List?> loadThumbnail(
     MediaItem item, {
     bool retryRemote = false,
+    bool preferHighResolution = false,
   }) async {
-    // Item-keyed artwork survives cases where TDLib rotates a thumbnail file
-    // ID or where the original history item had no thumbnail ID at all.
-    // During a full cache pass, however, do not let an old minithumbnail-sized
-    // artwork file permanently win. Refresh the Telegram message and try the
-    // best remote album-cover variant again so existing installations can
-    // upgrade low-resolution artwork in place.
+    // Artwork cache revision 3 contains only the best cover TelePlayer could
+    // obtain. Older revisions are intentionally ignored so tiny Telegram
+    // previews cannot remain stuck on the full-size Now Playing screen.
     final cachedArtwork = await _catalogCache.readArtwork(item);
     if (!retryRemote && cachedArtwork != null) {
       return cachedArtwork;
@@ -195,6 +211,8 @@ class MediaRepository {
     var inlineFallback = _decodeInlineThumbnail(item);
     var currentItem = item;
     var refreshedOnce = false;
+    var embeddedAttempted = false;
+    Uint8List? embeddedArtwork;
 
     Future<void> refreshCurrentItem() async {
       if (refreshedOnce) {
@@ -215,6 +233,30 @@ class MediaRepository {
       }
     }
 
+    Future<Uint8List?> tryEmbeddedArtwork() async {
+      if (embeddedAttempted) {
+        return embeddedArtwork;
+      }
+      embeddedAttempted = true;
+      final client = _telegramClient;
+      if (client is! EmbeddedArtworkProvider) {
+        return null;
+      }
+      try {
+        final embedded = await client.loadEmbeddedArtwork(currentItem);
+        if (embedded != null && embedded.isNotEmpty) {
+          embeddedArtwork = embedded;
+        }
+      } on AppException catch (error) {
+        if (!_isRecoverableThumbnailFailure(error)) {
+          rethrow;
+        }
+      } catch (_) {
+        // A malformed metadata block must never make the song unavailable.
+      }
+      return embeddedArtwork;
+    }
+
     Future<Uint8List?> tryRemoteArtwork() async {
       final thumbnailId = currentItem.thumbnailFileId;
       if (thumbnailId == null) {
@@ -223,38 +265,42 @@ class MediaRepository {
 
       final cachedThumbnail = await _catalogCache.readThumbnail(thumbnailId);
       if (!retryRemote && cachedThumbnail != null) {
-        await _catalogCache.writeArtwork(item, cachedThumbnail);
         return cachedThumbnail;
       }
 
       try {
         final downloaded = await _telegramClient.loadThumbnail(currentItem);
         if (downloaded == null || downloaded.isEmpty) {
-          if (cachedThumbnail != null && cachedThumbnail.isNotEmpty) {
-            await _catalogCache.writeArtwork(item, cachedThumbnail);
-            return cachedThumbnail;
-          }
-          return null;
+          return cachedThumbnail;
         }
         await _catalogCache.writeThumbnail(thumbnailId, downloaded);
-        await _catalogCache.writeArtwork(item, downloaded);
         return downloaded;
       } on AppException catch (error) {
         if (!_isRecoverableThumbnailFailure(error)) {
           rethrow;
         }
-        if (cachedThumbnail != null && cachedThumbnail.isNotEmpty) {
-          await _catalogCache.writeArtwork(item, cachedThumbnail);
-          return cachedThumbnail;
-        }
-        return null;
+        return cachedThumbnail;
       }
     }
 
-    // The history response can contain only a tiny inline preview. A direct
-    // GetMessage refresh often exposes album_cover_thumbnail or a larger
-    // external_album_covers entry. Force that refresh when the user runs the
-    // full cache operation, even if an older item-keyed artwork file exists.
+    Future<Uint8List> selectBest(Uint8List remote) async {
+      // Telegram frequently exposes a 40-320px cover for an audio message.
+      // That is adequate for a list tile but visibly pixelates a 400px player
+      // cover. When the remote image is below 512px on its shortest side,
+      // probe the audio metadata and prefer its embedded original artwork.
+      if ((!retryRemote && !preferHighResolution) ||
+          EmbeddedArtwork.isHighResolution(remote)) {
+        return remote;
+      }
+      final embedded = await tryEmbeddedArtwork();
+      if (embedded != null && EmbeddedArtwork.isBetter(embedded, remote)) {
+        return embedded;
+      }
+      return remote;
+    }
+
+    // A direct GetMessage refresh can expose external_album_covers or a larger
+    // album_cover_thumbnail that wasn't present in channel history.
     if (retryRemote) {
       await refreshCurrentItem();
     }
@@ -262,14 +308,26 @@ class MediaRepository {
     for (var attempt = 0; attempt < 3; attempt++) {
       final remote = await tryRemoteArtwork();
       if (remote != null && remote.isNotEmpty) {
-        return remote;
+        final selected = await selectBest(remote);
+        await _catalogCache.writeArtwork(item, selected);
+        return selected;
       }
 
       if (!refreshedOnce) {
         await refreshCurrentItem();
         final refreshedRemote = await tryRemoteArtwork();
         if (refreshedRemote != null && refreshedRemote.isNotEmpty) {
-          return refreshedRemote;
+          final selected = await selectBest(refreshedRemote);
+          await _catalogCache.writeArtwork(item, selected);
+          return selected;
+        }
+      }
+
+      if (retryRemote || preferHighResolution) {
+        final embedded = await tryEmbeddedArtwork();
+        if (embedded != null && embedded.isNotEmpty) {
+          await _catalogCache.writeArtwork(item, embedded);
+          return embedded;
         }
       }
 
@@ -283,10 +341,9 @@ class MediaRepository {
       }
     }
 
-    // Preserve a previously cached full image when Telegram is temporarily
-    // unavailable. Inline minithumbnails are intentionally not persisted as
-    // item artwork because doing so made a 40px preview look like the final
-    // album cover on later launches.
+    // Preserve a previously cached full image during temporary Telegram
+    // failures. Inline minithumbnails are only an in-memory last resort and
+    // are never persisted as the player's final album art.
     if (cachedArtwork != null && cachedArtwork.isNotEmpty) {
       return cachedArtwork;
     }

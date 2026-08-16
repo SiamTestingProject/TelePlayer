@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
+import '../../../core/utils/embedded_artwork.dart';
 import '../../library/models/media_item.dart';
 import '../../library/presentation/media_artwork.dart';
 import '../application/player_controller.dart';
@@ -30,7 +31,7 @@ class PlayerScreen extends StatelessWidget {
               : LayoutBuilder(
                   builder: (context, constraints) {
                     return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 30),
+                      padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 540),
@@ -50,7 +51,7 @@ class PlayerScreen extends StatelessWidget {
                                   scope.libraryController.items,
                                 ),
                               ),
-                              const SizedBox(height: 48),
+                              const SizedBox(height: 56),
                               _TrackIdentity(
                                 item: item,
                                 onDetails: () => _showSongDetails(context, item),
@@ -76,10 +77,13 @@ class PlayerScreen extends StatelessWidget {
                                 const SizedBox(height: 18),
                               ],
                               _ProgressSection(player: player, item: item),
-                              const SizedBox(height: 30),
+                              const SizedBox(height: 64),
                               _PrimaryControls(player: player),
-                              const SizedBox(height: 28),
-                              _PlaybackModes(player: player),
+                              const SizedBox(height: 21),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 26),
+                                child: _PlaybackModes(player: player),
+                              ),
                             ],
                           ),
                         ),
@@ -259,17 +263,17 @@ class _PlayerHeader extends StatelessWidget {
           circular: true,
           child: const Icon(
             Icons.keyboard_arrow_down_rounded,
-            size: 30,
+            size: 24,
             color: _PlayerPalette.paleBlue,
           ),
         ),
-        const SizedBox(width: 22),
+        const SizedBox(width: 16),
         const Expanded(
           child: Text(
             'Now Playing',
             style: TextStyle(
               color: _PlayerPalette.text,
-              fontSize: 23,
+              fontSize: 18,
               height: 1,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.3,
@@ -287,7 +291,7 @@ class _PlayerHeader extends StatelessWidget {
           onPressed: onQueue,
           child: const Icon(
             Icons.queue_music_rounded,
-            size: 30,
+            size: 24,
             color: _PlayerPalette.paleBlue,
           ),
         ),
@@ -313,13 +317,14 @@ class _HeaderButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
-      child: SizedBox.square(
-        dimension: 58,
+      child: SizedBox(
+        width: circular ? 44 : 52,
+        height: 44,
         child: Material(
           color: _PlayerPalette.headerSurface,
           shape: circular
               ? const CircleBorder()
-              : RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              : RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onPressed,
@@ -337,7 +342,7 @@ class _AudioOutputGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SizedBox.square(
-      dimension: 34,
+      dimension: 28,
       child: Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
@@ -346,7 +351,7 @@ class _AudioOutputGlyph extends StatelessWidget {
             top: 2,
             child: Icon(
               Icons.smartphone_rounded,
-              size: 25,
+              size: 20,
               color: _PlayerPalette.paleBlue,
             ),
           ),
@@ -355,7 +360,7 @@ class _AudioOutputGlyph extends StatelessWidget {
             bottom: 1,
             child: Icon(
               Icons.volume_up_rounded,
-              size: 21,
+              size: 17,
               color: _PlayerPalette.paleBlue,
             ),
           ),
@@ -388,6 +393,7 @@ class _ArtworkCarousel extends StatelessWidget {
                   libraryController: library,
                   borderRadius: 28,
                   iconSize: 76,
+                  highQuality: true,
                 ),
               ),
             ),
@@ -412,6 +418,7 @@ class _ArtworkCarousel extends StatelessWidget {
                     libraryController: library,
                     borderRadius: 28,
                     iconSize: 76,
+                    highQuality: true,
                   ),
                 ),
               ),
@@ -427,6 +434,7 @@ class _ArtworkCarousel extends StatelessWidget {
                     libraryController: library,
                     borderRadius: 28,
                     iconSize: 40,
+                    highQuality: true,
                   ),
                 ),
               ),
@@ -459,7 +467,7 @@ class _TrackIdentity extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: _PlayerPalette.text,
-                  fontSize: 31,
+                  fontSize: 26,
                   height: 1.04,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.8,
@@ -485,7 +493,7 @@ class _TrackIdentity extends StatelessWidget {
         Tooltip(
           message: 'Song details',
           child: SizedBox.square(
-            dimension: 58,
+            dimension: 48,
             child: Material(
               color: _PlayerPalette.headerSurface,
               shape: const CircleBorder(),
@@ -508,7 +516,7 @@ class _SongDetailsGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SizedBox.square(
-      dimension: 32,
+      dimension: 27,
       child: Stack(
         children: <Widget>[
           Positioned(
@@ -516,7 +524,7 @@ class _SongDetailsGlyph extends StatelessWidget {
             top: 3,
             child: Icon(
               Icons.chat_bubble_outline_rounded,
-              size: 27,
+              size: 23,
               color: _PlayerPalette.paleBlue,
             ),
           ),
@@ -525,7 +533,7 @@ class _SongDetailsGlyph extends StatelessWidget {
             top: 6,
             child: Icon(
               Icons.music_note_rounded,
-              size: 15,
+              size: 13,
               color: _PlayerPalette.paleBlue,
             ),
           ),
@@ -558,7 +566,7 @@ class _ProgressSection extends StatelessWidget {
           enabled: duration > Duration.zero,
           onChanged: (value) => unawaited(player.seekToFraction(value)),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Row(
           children: <Widget>[
             SizedBox(
@@ -574,11 +582,18 @@ class _ProgressSection extends StatelessWidget {
             ),
             Expanded(
               child: Center(
-                child: _MetadataPill(
-                  text: player.isBuffering
-                      ? 'Buffering'
-                      : _audioMetadata(item),
-                  buffering: player.isBuffering || player.isLoading,
+                child: FutureBuilder<AudioTechnicalMetadata?>(
+                  future: AppScope.of(context)
+                      .libraryController
+                      .technicalMetadataFor(item),
+                  builder: (context, snapshot) {
+                    return _MetadataPill(
+                      text: player.isBuffering
+                          ? 'Buffering'
+                          : _audioMetadata(item, snapshot.data),
+                      buffering: player.isBuffering || player.isLoading,
+                    );
+                  },
                 ),
               ),
             ),
@@ -615,7 +630,7 @@ class _WaveSeekBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 38,
+      height: 28,
       child: LayoutBuilder(
         builder: (context, constraints) {
           void update(double dx) {
@@ -633,7 +648,7 @@ class _WaveSeekBar extends StatelessWidget {
             onHorizontalDragUpdate: (details) => update(details.localPosition.dx),
             child: CustomPaint(
               painter: _WaveSeekPainter(value: value),
-              size: Size(constraints.maxWidth, 38),
+              size: Size(constraints.maxWidth, 28),
             ),
           );
         },
@@ -710,8 +725,8 @@ class _MetadataPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 260),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
+      constraints: const BoxConstraints(maxWidth: 240),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       decoration: BoxDecoration(
         color: _PlayerPalette.inactiveTrack.withValues(alpha: 0.76),
         borderRadius: BorderRadius.circular(20),
@@ -737,7 +752,7 @@ class _MetadataPill extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: _PlayerPalette.text,
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.1,
               ),
@@ -757,9 +772,11 @@ class _PrimaryControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playing = player.isPlaying;
-    return Row(
-      children: <Widget>[
-        Expanded(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: <Widget>[
+          Expanded(
           child: _MainControlButton(
             tooltip: 'Previous',
             icon: Icons.skip_previous_rounded,
@@ -767,7 +784,7 @@ class _PrimaryControls extends StatelessWidget {
             onPressed: () => unawaited(player.playPrevious()),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 6),
         Expanded(
           child: _MainControlButton(
             tooltip: playing ? 'Pause' : 'Play',
@@ -776,7 +793,7 @@ class _PrimaryControls extends StatelessWidget {
             onPressed: () => unawaited(player.togglePlay()),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 6),
         Expanded(
           child: _MainControlButton(
             tooltip: 'Next',
@@ -784,8 +801,9 @@ class _PrimaryControls extends StatelessWidget {
             color: _PlayerPalette.paleBlue,
             onPressed: () => unawaited(player.playNext()),
           ),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -808,7 +826,7 @@ class _MainControlButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: SizedBox(
-        height: 86,
+        height: 80,
         child: Material(
           color: color,
           borderRadius: BorderRadius.circular(32),
@@ -833,7 +851,7 @@ class _PlaybackModes extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 72,
+      height: 84,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: _PlayerPalette.darkSurface,
@@ -901,7 +919,7 @@ class _ModeButton extends StatelessWidget {
             child: Center(
               child: Icon(
                 icon,
-                size: 30,
+                size: 26,
                 color: selected ? _PlayerPalette.ink : _PlayerPalette.text,
               ),
             ),
@@ -1000,16 +1018,31 @@ class _EmptyPlayer extends StatelessWidget {
   }
 }
 
-String _audioMetadata(MediaItem item) {
+String _audioMetadata(
+  MediaItem item,
+  AudioTechnicalMetadata? technicalMetadata,
+) {
   final durationSeconds = item.durationSeconds ?? 0;
   final estimatedBitrate = durationSeconds > 0 && item.size > 0
       ? ((item.size * 8) / durationSeconds / 1000).round()
       : null;
   final format = _audioFormat(item);
+  final sampleRate = technicalMetadata?.sampleRateHz;
+  final leading = sampleRate != null && sampleRate > 0
+      ? _formatSampleRate(sampleRate)
+      : item.readableSize;
   if (estimatedBitrate != null && estimatedBitrate > 0) {
-    return '${item.readableSize} · $estimatedBitrate kbps · $format';
+    return '$leading · $estimatedBitrate kbps · $format';
   }
-  return '${item.readableSize} · $format';
+  return '$leading · $format';
+}
+
+String _formatSampleRate(int sampleRateHz) {
+  if (sampleRateHz % 1000 == 0) {
+    return '${sampleRateHz ~/ 1000} kHz';
+  }
+  final khz = sampleRateHz / 1000;
+  return '${khz.toStringAsFixed(1)} kHz';
 }
 
 String _audioFormat(MediaItem item) {

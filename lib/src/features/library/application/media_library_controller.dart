@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_exception.dart';
+import '../../../core/utils/embedded_artwork.dart';
 import '../../settings/application/settings_controller.dart';
 import '../data/media_repository.dart';
 import '../models/channel_cache_progress.dart';
@@ -23,6 +24,8 @@ class MediaLibraryController extends ChangeNotifier {
   List<MediaItem> _items = const <MediaItem>[];
   final Map<String, Future<Uint8List?>> _thumbnailRequests =
       <String, Future<Uint8List?>>{};
+  final Map<String, Future<AudioTechnicalMetadata?>> _technicalMetadataRequests =
+      <String, Future<AudioTechnicalMetadata?>>{};
 
   bool get isLoading => _isLoading;
   bool get isCaching => _isCaching;
@@ -41,7 +44,12 @@ class MediaLibraryController extends ChangeNotifier {
       } else {
         _items = await _repository.loadRecent(settings);
         final activeIds = _items.map((item) => item.id).toSet();
-        _thumbnailRequests.removeWhere((id, _) => !activeIds.contains(id));
+        _thumbnailRequests.removeWhere(
+          (key, _) => !activeIds.contains(key.split('|').first),
+        );
+        _technicalMetadataRequests.removeWhere(
+          (id, _) => !activeIds.contains(id),
+        );
       }
     } catch (error) {
       _error = error is AppException
@@ -80,6 +88,7 @@ class MediaLibraryController extends ChangeNotifier {
         onItemsAvailable: (availableItems) {
           _items = availableItems;
           _thumbnailRequests.clear();
+          _technicalMetadataRequests.clear();
           notifyListeners();
         },
         onProgress: (progress) {
@@ -89,6 +98,7 @@ class MediaLibraryController extends ChangeNotifier {
       );
       _items = items;
       _thumbnailRequests.clear();
+      _technicalMetadataRequests.clear();
       return true;
     } catch (error) {
       _error = error is AppException
@@ -103,13 +113,26 @@ class MediaLibraryController extends ChangeNotifier {
 
   Future<Uri> streamUriFor(MediaItem item) => _repository.streamUriFor(item);
 
-  Future<Uint8List?> thumbnailFor(MediaItem item) {
-    // Artwork cached during the full-channel pass can exist even when the
-    // original history item did not advertise a thumbnail ID. Always consult
-    // the repository cache before falling back to the music-note placeholder.
-    return _thumbnailRequests.putIfAbsent(
+  Future<AudioTechnicalMetadata?> technicalMetadataFor(MediaItem item) {
+    return _technicalMetadataRequests.putIfAbsent(
       item.id,
-      () => _repository.loadThumbnail(item),
+      () => _repository.loadTechnicalMetadata(item),
+    );
+  }
+
+  Future<Uint8List?> thumbnailFor(
+    MediaItem item, {
+    bool highQuality = false,
+  }) {
+    // Keep list-tile and full-player requests separate. A tiny Telegram cover
+    // may be fine in the library while the player needs embedded original art.
+    final requestKey = '${item.id}|${highQuality ? 'hq' : 'thumb'}';
+    return _thumbnailRequests.putIfAbsent(
+      requestKey,
+      () => _repository.loadThumbnail(
+        item,
+        preferHighResolution: highQuality,
+      ),
     );
   }
 }

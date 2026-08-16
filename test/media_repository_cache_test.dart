@@ -199,6 +199,47 @@ void main() {
     );
   });
 
+  test('replaces a tiny Telegram cover with embedded full-resolution artwork', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-embedded-artwork-upgrade-test-',
+    );
+    final telegram = _EmbeddedArtworkTelegramClient();
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final items = await repository.cacheAll(
+      const AppSettings(
+        apiId: 1,
+        apiHash: 'test-hash',
+        channelIds: <int>[-1001],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+      onProgress: (_) {},
+    );
+
+    final artwork = await repository.loadThumbnail(items.single);
+    expect(telegram.embeddedArtworkAttempts, 1);
+    expect(artwork, orderedEquals(telegram.fullResolutionArtwork));
+    expect(
+      await cache.readArtwork(items.single),
+      orderedEquals(telegram.fullResolutionArtwork),
+    );
+  });
+
   test('excludes Telegram video messages from the cached song library', () async {
     final directory = await Directory.systemTemp.createTemp(
       'teleplayer-audio-only-cache-test-',
@@ -249,6 +290,46 @@ void main() {
     expect(items, hasLength(1));
     expect(items.single.kind, MediaKind.audio);
   });
+}
+
+class _EmbeddedArtworkTelegramClient extends _ThumbnailFailureTelegramClient
+    implements EmbeddedArtworkProvider {
+  _EmbeddedArtworkTelegramClient();
+
+  int embeddedArtworkAttempts = 0;
+
+  final Uint8List tinyArtwork = _testPngHeader(96, 96);
+  final Uint8List fullResolutionArtwork = _testPngHeader(1200, 1200);
+
+  @override
+  Future<Uint8List?> loadThumbnail(MediaItem item) async {
+    thumbnailAttempts += 1;
+    return tinyArtwork;
+  }
+
+  @override
+  Future<Uint8List?> loadEmbeddedArtwork(MediaItem item) async {
+    embeddedArtworkAttempts += 1;
+    return fullResolutionArtwork;
+  }
+}
+
+Uint8List _testPngHeader(int width, int height) {
+  final bytes = Uint8List(24);
+  bytes.setAll(
+    0,
+    const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+  );
+  bytes.setAll(8, const <int>[0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  bytes[16] = (width >> 24) & 0xFF;
+  bytes[17] = (width >> 16) & 0xFF;
+  bytes[18] = (width >> 8) & 0xFF;
+  bytes[19] = width & 0xFF;
+  bytes[20] = (height >> 24) & 0xFF;
+  bytes[21] = (height >> 16) & 0xFF;
+  bytes[22] = (height >> 8) & 0xFF;
+  bytes[23] = height & 0xFF;
+  return bytes;
 }
 
 class _RefreshArtworkTelegramClient extends _ThumbnailFailureTelegramClient {

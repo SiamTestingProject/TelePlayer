@@ -6,6 +6,7 @@ import '../features/auth/models/auth_models.dart';
 import '../features/auth/presentation/auth_screen.dart';
 import '../features/library/presentation/library_screen.dart';
 import '../features/library/presentation/media_artwork.dart';
+import '../features/library/presentation/search_screen.dart';
 import '../features/player/application/player_controller.dart';
 import '../features/player/presentation/player_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -123,8 +124,13 @@ class AppHome extends StatefulWidget {
 }
 
 class _AppHomeState extends State<AppHome> {
-  int _index = 0;
-  final List<int> _navigationHistory = <int>[0];
+  static const int _libraryIndex = 0;
+  static const int _searchIndex = 1;
+  static const int _settingsIndex = 2;
+  static const int _playerIndex = 3;
+
+  int _index = _libraryIndex;
+  final List<int> _navigationHistory = <int>[_libraryIndex];
   bool _scheduledUpdateCheck = false;
 
   @override
@@ -195,16 +201,30 @@ class _AppHomeState extends State<AppHome> {
           final authReady =
               scope.authController.step.kind == AuthStepKind.ready;
           final child = switch (_index) {
-            0 => authReady
-                ? LibraryScreen(onOpenPlayer: () => _navigateTo(1))
-                : AuthScreen(onOpenSettings: () => _navigateTo(2)),
-            1 => authReady
-                ? PlayerScreen(onClose: _navigateBack)
-                : AuthScreen(onOpenSettings: () => _navigateTo(2)),
-            _ => SettingsScreen(
+            _libraryIndex => authReady
+                ? LibraryScreen(
+                    onOpenPlayer: () => _navigateTo(_playerIndex),
+                  )
+                : AuthScreen(
+                    onOpenSettings: () => _navigateTo(_settingsIndex),
+                  ),
+            _searchIndex => authReady
+                ? SearchScreen(
+                    onOpenPlayer: () => _navigateTo(_playerIndex),
+                  )
+                : AuthScreen(
+                    onOpenSettings: () => _navigateTo(_settingsIndex),
+                  ),
+            _settingsIndex => SettingsScreen(
                 onSaved: () =>
                     unawaited(scope.authController.initialize()),
               ),
+            _playerIndex => authReady
+                ? PlayerScreen(onClose: _navigateBack)
+                : AuthScreen(
+                    onOpenSettings: () => _navigateTo(_settingsIndex),
+                  ),
+            _ => const SizedBox.shrink(),
           };
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -214,7 +234,7 @@ class _AppHomeState extends State<AppHome> {
                   body: Row(
                     children: [
                       NavigationRail(
-                        selectedIndex: _index,
+                        selectedIndex: _index == _playerIndex ? null : _index,
                         onDestinationSelected: _navigateTo,
                         labelType: NavigationRailLabelType.all,
                         destinations: const [
@@ -224,9 +244,9 @@ class _AppHomeState extends State<AppHome> {
                             label: Text('Library'),
                           ),
                           NavigationRailDestination(
-                            icon: Icon(Icons.play_circle_outline_rounded),
-                            selectedIcon: Icon(Icons.play_circle_rounded),
-                            label: Text('Player'),
+                            icon: Icon(Icons.search_rounded),
+                            selectedIcon: Icon(Icons.manage_search_rounded),
+                            label: Text('Search'),
                           ),
                           NavigationRailDestination(
                             icon: Icon(Icons.settings_outlined),
@@ -241,7 +261,7 @@ class _AppHomeState extends State<AppHome> {
                   ),
                 );
               }
-              if (authReady && _index == 1) {
+              if (authReady && _index == _playerIndex) {
                 return child;
               }
               return Scaffold(
@@ -251,9 +271,9 @@ class _AppHomeState extends State<AppHome> {
                   children: <Widget>[
                     if (authReady &&
                         scope.playerController.item != null &&
-                        _index != 1)
+                        _index != _playerIndex)
                       _MiniPlayer(
-                        onOpenPlayer: () => _navigateTo(1),
+                        onOpenPlayer: () => _navigateTo(_playerIndex),
                       ),
                     NavigationBar(
                       selectedIndex: _index,
@@ -265,9 +285,9 @@ class _AppHomeState extends State<AppHome> {
                           label: 'Library',
                         ),
                         NavigationDestination(
-                          icon: Icon(Icons.play_circle_outline_rounded),
-                          selectedIcon: Icon(Icons.play_circle_rounded),
-                          label: 'Player',
+                          icon: Icon(Icons.search_rounded),
+                          selectedIcon: Icon(Icons.manage_search_rounded),
+                          label: 'Search',
                         ),
                         NavigationDestination(
                           icon: Icon(Icons.settings_outlined),

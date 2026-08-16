@@ -21,17 +21,8 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  final _searchController = TextEditingController();
   bool _requestedInitialLoad = false;
   MediaSortOrder _sortOrder = MediaSortOrder.newest;
-  String _searchQuery = '';
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -110,21 +101,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: _LibrarySearchField(
-                    controller: _searchController,
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    onClear: _searchQuery.isEmpty
-                        ? null
-                        : () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                  ),
-                ),
-              ),
               if (library.error != null)
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -151,7 +127,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         final item = visibleItems[index];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: _MediaTile(
+                          child: MediaLibraryTile(
                             item: item,
                             onTap: () => _open(scope, item),
                           ),
@@ -169,21 +145,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   List<MediaItem> _visibleItems(List<MediaItem> items) {
-    final filtered = items
+    final audioItems = items
         .where((item) => item.kind == MediaKind.audio)
         .toList(growable: true);
-    final query = _searchQuery.trim().toLowerCase();
-    if (query.isNotEmpty) {
-      filtered.removeWhere((item) {
-        final artist = item.artist?.toLowerCase() ?? '';
-        return !item.title.toLowerCase().contains(query) &&
-            !item.fileName.toLowerCase().contains(query) &&
-            !artist.contains(query) &&
-            !item.mimeType.toLowerCase().contains(query);
-      });
-    }
-    filtered.sort((left, right) => compareMediaItems(left, right, _sortOrder));
-    return filtered;
+    audioItems.sort((left, right) => compareMediaItems(left, right, _sortOrder));
+    return audioItems;
   }
 
   void _open(AppScope scope, MediaItem item) {
@@ -320,40 +286,8 @@ class _LibrarySortRow extends StatelessWidget {
   }
 }
 
-class _LibrarySearchField extends StatelessWidget {
-  const _LibrarySearchField({
-    required this.controller,
-    required this.onChanged,
-    required this.onClear,
-  });
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-  final VoidCallback? onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      textInputAction: TextInputAction.search,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        hintText: 'Search library',
-        prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: onClear == null
-            ? null
-            : IconButton(
-                tooltip: 'Clear search',
-                onPressed: onClear,
-                icon: const Icon(Icons.close_rounded),
-              ),
-      ),
-    );
-  }
-}
-
-class _MediaTile extends StatelessWidget {
-  const _MediaTile({required this.item, required this.onTap});
+class MediaLibraryTile extends StatelessWidget {
+  const MediaLibraryTile({required this.item, required this.onTap, super.key});
 
   final MediaItem item;
   final VoidCallback onTap;

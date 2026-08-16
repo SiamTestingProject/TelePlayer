@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:tdlib/td_api.dart' as td;
 
 import '../../core/errors/app_exception.dart';
+import '../../core/utils/embedded_artwork.dart';
 import '../../core/utils/file_name_utils.dart';
 import '../../features/auth/models/auth_models.dart';
 import '../../features/library/models/media_item.dart';
@@ -16,7 +17,8 @@ import 'telegram_client.dart';
 
 typedef ApplicationSupportDirectoryProvider = Future<io.Directory> Function();
 
-class TdlibTelegramClient implements TelegramClient {
+class TdlibTelegramClient
+    implements TelegramClient, EmbeddedArtworkProvider, AudioTechnicalMetadataProvider {
   TdlibTelegramClient(
     this._gateway, {
     ApplicationSupportDirectoryProvider? applicationSupportDirectory,
@@ -406,6 +408,79 @@ class TdlibTelegramClient implements TelegramClient {
   }
 
   @override
+  Future<Uint8List?> loadEmbeddedArtwork(MediaItem item) async {
+    final prefix = await _loadAudioPrefix(item, 2 * 1024 * 1024);
+    if (prefix == null || prefix.isEmpty) {
+      return null;
+    }
+    return EmbeddedArtwork.extract(
+      prefix,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+    );
+  }
+
+  @override
+  Future<AudioTechnicalMetadata?> loadTechnicalMetadata(MediaItem item) async {
+    final prefix = await _loadAudioPrefix(item, 256 * 1024);
+    if (prefix == null || prefix.isEmpty) {
+      return null;
+    }
+    return EmbeddedArtwork.technicalMetadata(
+      prefix,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+    );
+  }
+
+  Future<Uint8List?> _loadAudioPrefix(MediaItem item, int maximumBytes) async {
+    final firstPart = item.parts.isEmpty ? null : item.parts.first;
+    final fileId = firstPart?.fileId ?? item.fileId;
+    final fileSize = firstPart?.size ?? item.size;
+    if (fileId <= 0 || fileSize <= 0) {
+      return null;
+    }
+    final probeBytes = min(fileSize, maximumBytes);
+
+    return _withFileDownloadLock(fileId, () async {
+      final response = await _gateway.send(
+        td.DownloadFile(
+          fileId: fileId,
+          priority: 18,
+          offset: 0,
+          limit: probeBytes,
+          synchronous: true,
+        ),
+        timeout: const Duration(minutes: 2),
+      );
+      final file = _extractFile(response);
+      final path = file.localPath;
+      if (path == null || path.isEmpty || !await io.File(path).exists()) {
+        return null;
+      }
+
+      final handle = await io.File(path).open();
+      try {
+        await handle.setPosition(0);
+        final bytes = BytesBuilder(copy: false);
+        while (bytes.length < probeBytes) {
+          final chunk = await handle.read(
+            min(256 * 1024, probeBytes - bytes.length),
+          );
+          if (chunk.isEmpty) {
+            break;
+          }
+          bytes.add(chunk);
+        }
+        final prefix = bytes.takeBytes();
+        return prefix.isEmpty ? null : prefix;
+      } finally {
+        await handle.close();
+      }
+    });
+  }
+
+  @override
   Future<Uint8List?> loadThumbnail(MediaItem item) async {
     final thumbnailId = item.thumbnailFileId;
     if (thumbnailId == null) {
@@ -559,7 +634,7 @@ class TdlibTelegramClient implements TelegramClient {
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.3.4',
+        applicationVersion: '1.3.6',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),

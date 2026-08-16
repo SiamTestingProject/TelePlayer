@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../core/errors/app_exception.dart';
+import '../../core/utils/embedded_artwork.dart';
 import '../../features/auth/models/auth_models.dart';
 import '../../features/library/models/media_item.dart';
 import '../../features/settings/models/app_settings.dart';
@@ -38,4 +39,12 @@ abstract interface class TelegramClient {
   Future<MediaItem> refreshMedia(MediaItem item);
   Future<Uint8List> readFileRange(MediaItem item, int start, int end);
   Future<Uint8List?> loadThumbnail(MediaItem item);
+}
+
+abstract interface class EmbeddedArtworkProvider {
+  Future<Uint8List?> loadEmbeddedArtwork(MediaItem item);
+}
+
+abstract interface class AudioTechnicalMetadataProvider {
+  Future<AudioTechnicalMetadata?> loadTechnicalMetadata(MediaItem item);
 }
