@@ -104,9 +104,9 @@ class MediaLibraryController extends ChangeNotifier {
   Future<Uri> streamUriFor(MediaItem item) => _repository.streamUriFor(item);
 
   Future<Uint8List?> thumbnailFor(MediaItem item) {
-    if (item.thumbnailFileId == null) {
-      return Future<Uint8List?>.value();
-    }
+    // Artwork cached during the full-channel pass can exist even when the
+    // original history item did not advertise a thumbnail ID. Always consult
+    // the repository cache before falling back to the music-note placeholder.
     return _thumbnailRequests.putIfAbsent(
       item.id,
       () => _repository.loadThumbnail(item),

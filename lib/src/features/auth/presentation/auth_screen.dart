@@ -231,7 +231,7 @@ class _AuthScreenState extends State<AuthScreen> {
       AuthStepKind.needsCode => 'Enter the code Telegram sent to your account.',
       AuthStepKind.needsPassword =>
         'Enter your Telegram two-step verification password.',
-      AuthStepKind.ready => 'Your Telegram media library is ready.',
+      AuthStepKind.ready => 'Your Telegram audio library is ready.',
       AuthStepKind.needsPhone => 'Enter the phone number linked to Telegram.',
       AuthStepKind.expired => 'Your Telegram session expired. Sign in again.',
       AuthStepKind.needsConfiguration =>

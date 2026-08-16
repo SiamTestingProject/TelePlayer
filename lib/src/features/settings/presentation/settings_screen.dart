@@ -337,7 +337,7 @@ class _SettingsHero extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  'Telegram media, tuned your way',
+                  'Telegram music, tuned your way',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: colors.onPrimaryContainer.withValues(alpha: 0.76),
                       ),

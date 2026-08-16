@@ -169,7 +169,8 @@ class TdlibTelegramClient implements TelegramClient {
         }
       }
     }
-    return _mergeSplitParts(items);
+    items.sort((left, right) => right.messageId.compareTo(left.messageId));
+    return items;
   }
 
   @override
@@ -238,7 +239,8 @@ class TdlibTelegramClient implements TelegramClient {
         fromMessageId = oldestMessageId;
       }
     }
-    return _mergeSplitParts(items);
+    items.sort((left, right) => right.messageId.compareTo(left.messageId));
+    return items;
   }
 
   Future<void> _ensureChatsAvailable(List<int> channelIds) async {
@@ -524,7 +526,7 @@ class TdlibTelegramClient implements TelegramClient {
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.2.0',
+        applicationVersion: '1.3.1',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -559,39 +561,31 @@ class TdlibTelegramClient implements TelegramClient {
     final contentMap = Map<String, dynamic>.from(content);
     final contentType = contentMap['@type']?.toString();
     final Map<String, dynamic>? media;
-    final MediaKind initialKind;
-    if (contentType == 'messageVideo') {
-      media = _asMap(contentMap['video']);
-      initialKind = MediaKind.video;
-    } else if (contentType == 'messageAudio') {
+    final MediaKind sourceKind;
+    if (contentType == 'messageAudio') {
       media = _asMap(contentMap['audio']);
-      initialKind = MediaKind.audio;
+      sourceKind = MediaKind.audio;
     } else if (contentType == 'messageDocument') {
       media = _asMap(contentMap['document']);
-      initialKind = MediaKind.document;
+      sourceKind = MediaKind.document;
     } else {
       return null;
     }
     if (media == null) {
       return null;
     }
-    final file = _asMap(media['video']) ??
-        _asMap(media['audio']) ??
-        _asMap(media['document']);
+    final file = _asMap(media['audio']) ?? _asMap(media['document']);
     if (file == null) {
       return null;
     }
-    final mimeType = _mimeTypeForMedia(media, initialKind);
-    final fileName = _fileNameForMedia(media, initialKind, mimeType);
-    final isAudio = initialKind == MediaKind.audio ||
+    final mimeType = _mimeTypeForMedia(media, sourceKind);
+    final fileName = _fileNameForMedia(media, sourceKind, mimeType);
+    final isAudio = sourceKind == MediaKind.audio ||
         mimeType.startsWith('audio/') ||
         FileNameUtils.isSupportedAudioName(fileName);
-    final isVideo = mimeType.startsWith('video/') ||
-        FileNameUtils.isSupportedVideoName(fileName);
-    if (!isAudio && !isVideo) {
+    if (!isAudio) {
       return null;
     }
-    final kind = isAudio ? MediaKind.audio : initialKind;
     final fileId = int.tryParse(file['id']?.toString() ?? '') ?? 0;
     if (fileId <= 0) {
       return null;
@@ -603,65 +597,25 @@ class TdlibTelegramClient implements TelegramClient {
     if (fileSize <= 0) {
       return null;
     }
-    final split = FileNameUtils.parseSplitInfo(fileName);
     final id = '$chatId:${message['id'] ?? 0}:$fileId';
     return MediaItem(
       id: id,
       chatId: chatId,
       messageId: int.tryParse(message['id']?.toString() ?? '') ?? 0,
       fileId: fileId,
-      title: _titleForMedia(media, split?.displayName ?? fileName),
+      title: _titleForMedia(media, fileName),
       fileName: fileName,
       mimeType: mimeType,
       size: fileSize,
-      kind: split == null ? kind : MediaKind.splitVideo,
+      kind: MediaKind.audio,
       dateEpochSeconds:
           int.tryParse(message['date']?.toString() ?? '') ?? 0,
       artist: _artistForMedia(media),
       durationSeconds: int.tryParse(media['duration']?.toString() ?? ''),
       thumbnailFileId: _thumbnailFileId(media),
+      inlineThumbnailBase64: _inlineThumbnailBase64(media),
       localPath: _asMap(file['local'])?['path']?.toString(),
     );
-  }
-
-  List<MediaItem> _mergeSplitParts(List<MediaItem> items) {
-    final grouped = <String, List<MediaItem>>{};
-    final normal = <MediaItem>[];
-    for (final item in items) {
-      final split = FileNameUtils.parseSplitInfo(item.fileName);
-      if (split == null) {
-        normal.add(item);
-      } else {
-        final groupKey = '${item.chatId}:${split.groupKey}';
-        grouped.putIfAbsent(groupKey, () => <MediaItem>[]).add(item);
-      }
-    }
-    final merged = <MediaItem>[...normal];
-    for (final entry in grouped.entries) {
-      final sorted = [...entry.value]
-        ..sort((a, b) {
-          final left = FileNameUtils.parseSplitInfo(a.fileName)?.partNumber ?? 0;
-          final right = FileNameUtils.parseSplitInfo(b.fileName)?.partNumber ?? 0;
-          return left.compareTo(right);
-        });
-      final first = sorted.first;
-      final parts = sorted.map((item) {
-        final split = FileNameUtils.parseSplitInfo(item.fileName);
-        return MediaPart(
-          chatId: item.chatId,
-          messageId: item.messageId,
-          fileId: item.fileId,
-          partNumber: split?.partNumber ?? 0,
-          size: item.size,
-        );
-      }).toList(growable: false);
-      merged.add(first.copyWith(
-        size: parts.fold<int>(0, (total, part) => total + part.size),
-        parts: parts,
-      ));
-    }
-    merged.sort((a, b) => b.messageId.compareTo(a.messageId));
-    return merged;
   }
 
   _TdFile _extractFile(Map<String, dynamic> json) {
@@ -733,6 +687,20 @@ class TdlibTelegramClient implements TelegramClient {
     return best?.fileId;
   }
 
+  String? _inlineThumbnailBase64(Map<String, dynamic> media) {
+    for (final key in const <String>[
+      'album_cover_minithumbnail',
+      'minithumbnail',
+    ]) {
+      final thumbnail = _asMap(media[key]);
+      final data = thumbnail?['data']?.toString().trim() ?? '';
+      if (data.isNotEmpty) {
+        return data;
+      }
+    }
+    return null;
+  }
+
   String _mimeTypeForMedia(Map<String, dynamic> media, MediaKind kind) {
     final mimeType = media['mime_type']?.toString().trim() ?? '';
     if (mimeType.isNotEmpty) {
@@ -751,9 +719,7 @@ class TdlibTelegramClient implements TelegramClient {
       return fileName;
     }
     final title = media['title']?.toString().trim() ?? '';
-    final baseName = title.isEmpty
-        ? (kind == MediaKind.audio ? 'Telegram audio' : 'Telegram media')
-        : title;
+    final baseName = title.isEmpty ? 'Telegram audio' : title;
     final extension = switch (mimeType.toLowerCase()) {
       'audio/mpeg' => '.mp3',
       'audio/mp4' || 'audio/x-m4a' => '.m4a',

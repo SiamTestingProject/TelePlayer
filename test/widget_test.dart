@@ -104,6 +104,16 @@ void main() {
     await tester.pump();
 
     expect(telegramClient.submittedPassword, 'Letters123!');
+
+    telegramClient.emitStep(const AuthStep(AuthStepKind.ready));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Library'), findsWidgets);
+    expect(find.text('Newest'), findsOneWidget);
+    expect(find.text('Songs'), findsNothing);
+    expect(find.text('Videos'), findsNothing);
+    expect(find.text('All'), findsNothing);
   });
 }
 

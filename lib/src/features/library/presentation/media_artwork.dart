@@ -33,12 +33,11 @@ class MediaArtwork extends StatelessWidget {
               fit: BoxFit.cover,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => _ArtworkFallback(
-                item: item,
                 iconSize: iconSize,
               ),
             );
           }
-          return _ArtworkFallback(item: item, iconSize: iconSize);
+          return _ArtworkFallback(iconSize: iconSize);
         },
       ),
     );
@@ -46,9 +45,8 @@ class MediaArtwork extends StatelessWidget {
 }
 
 class _ArtworkFallback extends StatelessWidget {
-  const _ArtworkFallback({required this.item, required this.iconSize});
+  const _ArtworkFallback({required this.iconSize});
 
-  final MediaItem item;
   final double iconSize;
 
   @override
@@ -68,9 +66,7 @@ class _ArtworkFallback extends StatelessWidget {
       ),
       child: Center(
         child: Icon(
-          item.kind == MediaKind.audio
-              ? Icons.music_note_rounded
-              : Icons.movie_outlined,
+          Icons.music_note_rounded,
           size: iconSize,
           color: colors.onPrimaryContainer,
         ),

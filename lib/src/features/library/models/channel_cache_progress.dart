@@ -28,13 +28,13 @@ class ChannelCacheProgress {
 
   String get label => switch (phase) {
         ChannelCachePhase.scanning =>
-          'Scanning $scannedMessages messages · $mediaCount media files found',
+          'Scanning $scannedMessages messages · $mediaCount songs found',
         ChannelCachePhase.thumbnails => failedThumbnails == 0
-            ? 'Saving best thumbnails · $processedThumbnails of $totalThumbnails'
-            : 'Saving best thumbnails · $processedThumbnails of '
+            ? 'Saving album artwork · $processedThumbnails of $totalThumbnails'
+            : 'Saving album artwork · $processedThumbnails of '
                 '$totalThumbnails · $failedThumbnails unavailable',
         ChannelCachePhase.complete => failedThumbnails == 0
-            ? '$mediaCount media files cached'
-            : '$mediaCount media files cached · $failedThumbnails thumbnails unavailable',
+            ? '$mediaCount songs cached'
+            : '$mediaCount songs cached · $failedThumbnails covers unavailable',
       };
 }

@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -15,7 +16,11 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             manifest = root / "android/app/src/main/AndroidManifest.xml"
             manifest.parent.mkdir(parents=True)
             manifest.write_text(
-                '<application android:label="telegram_media_player">\n</application>\n',
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                '    <application android:label="telegram_media_player">\n'
+                '        <activity android:name=".MainActivity" />\n'
+                '    </application>\n'
+                '</manifest>\n',
                 encoding="utf-8",
             )
 
@@ -23,6 +28,7 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             configure_android(root)
 
             manifest_text = manifest.read_text()
+            ElementTree.fromstring(manifest_text)
             self.assertIn('android:label="TelePlayer"', manifest_text)
             self.assertEqual(
                 manifest_text.count('android.permission.INTERNET'),
@@ -32,6 +38,43 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 manifest_text.count('android:usesCleartextTraffic="true"'),
                 1,
             )
+            self.assertEqual(
+                manifest_text.count('android.permission.WAKE_LOCK'),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count('android.permission.FOREGROUND_SERVICE"'),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count(
+                    'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'
+                ),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count(
+                    'android:name="com.ryanheise.audioservice.AudioServiceActivity"'
+                ),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count(
+                    'android:name="com.ryanheise.audioservice.AudioService"'
+                ),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count('android:stopWithTask="false"'),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count(
+                    'android:name="com.ryanheise.audioservice.MediaButtonReceiver"'
+                ),
+                1,
+            )
+            self.assertEqual(manifest_text.count('xmlns:tools='), 1)
 
     def test_configures_windows_product_and_binary_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

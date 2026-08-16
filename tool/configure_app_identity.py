@@ -13,7 +13,34 @@ WINDOWS_BINARY_NAME = "teleplayer"
 ANDROID_INTERNET_PERMISSION = (
     '<uses-permission android:name="android.permission.INTERNET" />'
 )
+ANDROID_BACKGROUND_AUDIO_PERMISSIONS = (
+    '<uses-permission android:name="android.permission.WAKE_LOCK" />',
+    '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
+    '<uses-permission '
+    'android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />',
+)
 ANDROID_CLEARTEXT_ATTRIBUTE = 'android:usesCleartextTraffic="true"'
+ANDROID_TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"'
+ANDROID_AUDIO_ACTIVITY = "com.ryanheise.audioservice.AudioServiceActivity"
+ANDROID_AUDIO_COMPONENTS = """        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true"
+            android:stopWithTask="false"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+"""
 
 
 def _replace(path: Path, pattern: str, replacement: str) -> None:
@@ -35,10 +62,29 @@ def configure_android(root: Path) -> None:
         f'android:label="{DISPLAY_NAME}"',
     )
     original = manifest.read_text(encoding="utf-8")
-    if "android.permission.INTERNET" not in original:
+    if ANDROID_TOOLS_NAMESPACE not in original:
+        updated, count = re.subn(
+            r"(<manifest\b[^>]*)(>)",
+            rf"\1\n    {ANDROID_TOOLS_NAMESPACE}\2",
+            original,
+            count=1,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected manifest entry was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
+    permissions = (
+        ANDROID_INTERNET_PERMISSION,
+        *ANDROID_BACKGROUND_AUDIO_PERMISSIONS,
+    )
+    for permission in permissions:
+        permission_name = re.search(r'android:name="([^"]+)"', permission)
+        assert permission_name is not None
+        if permission_name.group(1) in original:
+            continue
         updated, count = re.subn(
             r"(^\s*<application\b)",
-            rf"    {ANDROID_INTERNET_PERMISSION}\n\1",
+            rf"    {permission}\n\1",
             original,
             count=1,
             flags=re.MULTILINE,
@@ -56,6 +102,47 @@ def configure_android(root: Path) -> None:
         )
         if count == 0:
             raise RuntimeError(f"Expected TelePlayer label was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
+    if ANDROID_AUDIO_ACTIVITY not in original:
+        updated, count = re.subn(
+            r'android:name="[^"]*MainActivity"',
+            f'android:name="{ANDROID_AUDIO_ACTIVITY}"',
+            original,
+            count=1,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected Flutter MainActivity was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
+    if (
+        'android:name="com.ryanheise.audioservice.AudioService"' in original
+        and 'android:stopWithTask="false"' not in original
+    ):
+        updated, count = re.subn(
+            r'(android:name="com\.ryanheise\.audioservice\.AudioService"[^>]*android:exported="true")',
+            r'\1\n            android:stopWithTask="false"',
+            original,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected AudioService entry was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
+    if (
+        'android:name="com.ryanheise.audioservice.AudioService"'
+        not in original
+    ):
+        updated, count = re.subn(
+            r"(^\s*</application>)",
+            rf"{ANDROID_AUDIO_COMPONENTS}\1",
+            original,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected application closing tag was not found in {manifest}")
         manifest.write_text(updated, encoding="utf-8")
 
 

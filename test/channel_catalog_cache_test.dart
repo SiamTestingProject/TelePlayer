@@ -33,6 +33,7 @@ void main() {
       artist: 'Example Artist',
       durationSeconds: 178,
       thumbnailFileId: 88,
+      inlineThumbnailBase64: 'AQIDBA==',
       parts: <MediaPart>[
         MediaPart(
           chatId: -1001,
@@ -56,6 +57,10 @@ void main() {
     expect(restored.single.artist, item.artist);
     expect(restored.single.durationSeconds, item.durationSeconds);
     expect(restored.single.dateEpochSeconds, item.dateEpochSeconds);
+    expect(
+      restored.single.inlineThumbnailBase64,
+      item.inlineThumbnailBase64,
+    );
     expect(restored.single.parts, hasLength(1));
     expect(restored.single.parts.single.partNumber, 1);
     expect(thumbnail, <int>[1, 2, 3, 4]);

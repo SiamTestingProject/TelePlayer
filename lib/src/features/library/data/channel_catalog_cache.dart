@@ -68,6 +68,27 @@ class ChannelCatalogCache {
     await file.writeAsBytes(bytes, flush: true);
   }
 
+  Future<Uint8List?> readArtwork(MediaItem item) async {
+    try {
+      final file = await _artworkFile(item);
+      if (!await file.exists()) {
+        return null;
+      }
+      final bytes = await file.readAsBytes();
+      return bytes.isEmpty ? null : bytes;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  Future<void> writeArtwork(MediaItem item, Uint8List bytes) async {
+    if (bytes.isEmpty) {
+      return;
+    }
+    final file = await _artworkFile(item);
+    await file.writeAsBytes(bytes, flush: true);
+  }
+
   Future<File> _catalogFile() async {
     final directory = await _cacheDirectory();
     return File('${directory.path}${Platform.pathSeparator}catalog.json');
@@ -83,6 +104,22 @@ class ChannelCatalogCache {
     }
     return File(
       '${thumbnails.path}${Platform.pathSeparator}$fileId.thumbnail',
+    );
+  }
+
+  Future<File> _artworkFile(MediaItem item) async {
+    final directory = await _cacheDirectory();
+    final artwork = Directory(
+      '${directory.path}${Platform.pathSeparator}artwork',
+    );
+    if (!await artwork.exists()) {
+      await artwork.create(recursive: true);
+    }
+    // Use Telegram numeric identifiers rather than the title/file name so the
+    // cache path is stable and safe on Android and Windows.
+    final key = '${item.chatId}_${item.messageId}_${item.fileId}';
+    return File(
+      '${artwork.path}${Platform.pathSeparator}$key.artwork',
     );
   }
 

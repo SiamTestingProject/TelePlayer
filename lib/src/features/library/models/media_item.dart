@@ -1,6 +1,6 @@
 import '../../../core/utils/file_name_utils.dart';
 
-enum MediaKind { video, audio, document, splitVideo }
+enum MediaKind { audio, document }
 
 enum MediaSortOrder { newest, alphabetical }
 
@@ -19,6 +19,7 @@ class MediaItem {
     this.artist,
     this.durationSeconds,
     this.thumbnailFileId,
+    this.inlineThumbnailBase64,
     this.localPath,
     this.parts = const <MediaPart>[],
   });
@@ -36,11 +37,15 @@ class MediaItem {
   final String? artist;
   final int? durationSeconds;
   final int? thumbnailFileId;
+  final String? inlineThumbnailBase64;
   final String? localPath;
   final List<MediaPart> parts;
 
   String get readableSize => FileNameUtils.readableBytes(size);
-  bool get isSplit => parts.isNotEmpty || kind == MediaKind.splitVideo;
+  bool get isSplit => parts.isNotEmpty;
+  bool get hasThumbnail =>
+      thumbnailFileId != null ||
+      inlineThumbnailBase64?.trim().isNotEmpty == true;
 
   factory MediaItem.fromJson(Map<String, dynamic> json) {
     final rawParts = json['parts'] as List<dynamic>? ?? const <dynamic>[];
@@ -64,6 +69,7 @@ class MediaItem {
           int.tryParse(json['durationSeconds']?.toString() ?? ''),
       thumbnailFileId:
           int.tryParse(json['thumbnailFileId']?.toString() ?? ''),
+      inlineThumbnailBase64: json['inlineThumbnailBase64']?.toString(),
       localPath: json['localPath']?.toString(),
       parts: rawParts
           .whereType<Map>()
@@ -86,6 +92,8 @@ class MediaItem {
         if (artist != null) 'artist': artist,
         if (durationSeconds != null) 'durationSeconds': durationSeconds,
         if (thumbnailFileId != null) 'thumbnailFileId': thumbnailFileId,
+        if (inlineThumbnailBase64 != null && inlineThumbnailBase64!.isNotEmpty)
+          'inlineThumbnailBase64': inlineThumbnailBase64,
         if (localPath != null && localPath!.isNotEmpty) 'localPath': localPath,
         'parts': parts.map((part) => part.toJson()).toList(growable: false),
       };
@@ -109,6 +117,7 @@ class MediaItem {
       artist: artist,
       durationSeconds: durationSeconds,
       thumbnailFileId: thumbnailFileId,
+      inlineThumbnailBase64: inlineThumbnailBase64,
       localPath: localPath ?? this.localPath,
       parts: parts ?? this.parts,
     );

@@ -212,6 +212,12 @@ void main() {
                       'performer': 'Example Artist',
                       'file_name': 'Example Track.mp3',
                       'mime_type': 'audio/mpeg',
+                      'album_cover_minithumbnail': <String, dynamic>{
+                        '@type': 'minithumbnail',
+                        'width': 40,
+                        'height': 40,
+                        'data': 'AQIDBA==',
+                      },
                       'thumbnail': <String, dynamic>{
                         'width': 90,
                         'height': 90,
@@ -265,6 +271,7 @@ void main() {
     expect(items.single.fileId, 77);
     expect(items.single.size, 32600000);
     expect(items.single.thumbnailFileId, 88);
+    expect(items.single.inlineThumbnailBase64, 'AQIDBA==');
   });
 
   test('full media scan paginates through the complete channel history', () async {

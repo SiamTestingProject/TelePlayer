@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:video_player/video_player.dart';
+import 'package:just_audio/just_audio.dart' as audio;
+import 'package:just_audio_background/just_audio_background.dart' as background;
 
 import '../../../core/errors/app_exception.dart';
 import '../../library/application/media_library_controller.dart';
@@ -14,27 +15,54 @@ class PlayerController extends ChangeNotifier {
   final MediaLibraryController _libraryController;
   final Set<String> _favoriteIds = <String>{};
   final Random _random = Random();
+  final List<StreamSubscription<dynamic>> _playerSubscriptions =
+      <StreamSubscription<dynamic>>[];
 
-  VideoPlayerController? _videoController;
+  audio.AudioPlayer? _audioPlayer;
   MediaItem? _item;
   Object? _error;
-  bool _isLoading = false;
+  bool _isOpening = false;
   bool _shuffleEnabled = false;
   bool _repeatEnabled = false;
   bool _isAdvancing = false;
   bool _isRecovering = false;
+  bool _disposed = false;
   int _recoveryAttempts = 0;
+  int _openGeneration = 0;
   Duration _recoveryBaseline = Duration.zero;
 
-  VideoPlayerController? get videoController => _videoController;
   MediaItem? get item => _item;
   Object? get error => _error;
-  bool get isLoading => _isLoading;
+  bool get isLoading => _isOpening;
+  bool get isPlaying => _audioPlayer?.playing == true;
+  bool get isBuffering {
+    final state = _audioPlayer?.processingState;
+    return state == audio.ProcessingState.loading ||
+        state == audio.ProcessingState.buffering;
+  }
+
+  Duration get position => _audioPlayer?.position ?? Duration.zero;
+  Duration get duration {
+    final loadedDuration = _audioPlayer?.duration;
+    if (loadedDuration != null && loadedDuration > Duration.zero) {
+      return loadedDuration;
+    }
+    return Duration(seconds: _item?.durationSeconds ?? 0);
+  }
+
   bool get shuffleEnabled => _shuffleEnabled;
   bool get repeatEnabled => _repeatEnabled;
   bool get isFavorite => _item != null && _favoriteIds.contains(_item!.id);
 
   Future<void> open(MediaItem item) {
+    if (item.kind != MediaKind.audio) {
+      _error = const AppException(
+        AppErrorCode.invalidMedia,
+        message: 'TelePlayer supports Telegram audio files only.',
+      );
+      _notify();
+      return Future<void>.value();
+    }
     _recoveryAttempts = 0;
     _recoveryBaseline = Duration.zero;
     return _open(item);
@@ -44,72 +72,114 @@ class PlayerController extends ChangeNotifier {
     MediaItem item, {
     Duration resumeAt = Duration.zero,
   }) async {
-    _isLoading = true;
+    final generation = ++_openGeneration;
+    _isOpening = true;
     _error = null;
     _item = item;
-    notifyListeners();
+    _notify();
 
-    VideoPlayerController? nextController;
+    final player = _ensurePlayer();
     try {
-      final previousController = _videoController;
-      _videoController = null;
-      previousController?.removeListener(_handlePlaybackUpdate);
-      await previousController?.dispose();
-
+      await player.stop();
       final uri = await _libraryController.streamUriFor(item);
-      nextController = VideoPlayerController.networkUrl(
-        uri,
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
-      await nextController.initialize().timeout(const Duration(seconds: 60));
-      await nextController.setLooping(_repeatEnabled);
-      if (resumeAt > Duration.zero &&
-          resumeAt < nextController.value.duration) {
-        await nextController.seekTo(resumeAt);
+      if (generation != _openGeneration || _disposed) {
+        return;
       }
-      _recoveryBaseline = resumeAt;
-      nextController.addListener(_handlePlaybackUpdate);
-      _videoController = nextController;
-      await nextController.play();
-    } on TimeoutException catch (error) {
-      await nextController?.dispose();
-      _videoController = null;
-      _error = AppException(
-        AppErrorCode.networkInterrupted,
-        message: 'Telegram took too long to prepare this track. Try again.',
-        cause: error,
+      final source = audio.AudioSource.uri(
+        uri,
+        tag: background.MediaItem(
+          id: item.id,
+          album: 'Telegram Mix',
+          title: item.title,
+          artist: item.artist,
+          duration: item.durationSeconds == null
+              ? null
+              : Duration(seconds: item.durationSeconds!),
+        ),
       );
+      await player
+          .setAudioSources(
+            <audio.AudioSource>[source],
+            initialIndex: 0,
+            initialPosition: resumeAt,
+            useLazyPreparation: false,
+          )
+          .timeout(const Duration(seconds: 60));
+      if (generation != _openGeneration || _disposed) {
+        return;
+      }
+      await player.setLoopMode(
+        _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
+      );
+      _recoveryBaseline = resumeAt;
+      unawaited(_startPlayback(player, generation));
+    } on TimeoutException catch (error) {
+      if (generation == _openGeneration) {
+        _error = AppException(
+          AppErrorCode.networkInterrupted,
+          message: 'Telegram took too long to prepare this song. Try again.',
+          cause: error,
+        );
+      }
+    } on audio.PlayerInterruptedException catch (error) {
+      if (generation == _openGeneration) {
+        _error = AppException(
+          AppErrorCode.playbackFailure,
+          message: 'Audio loading was interrupted. Try the song again.',
+          cause: error,
+        );
+      }
     } catch (error) {
-      await nextController?.dispose();
-      _videoController = null;
-      _error = error is AppException
-          ? error
-          : AppException(
-              AppErrorCode.playbackFailure,
-              message: 'TelePlayer could not open this Telegram media stream.',
-              cause: error,
-            );
+      if (generation == _openGeneration) {
+        _error = error is AppException
+            ? error
+            : AppException(
+                AppErrorCode.playbackFailure,
+                message: 'TelePlayer could not open this Telegram audio stream.',
+                cause: error,
+              );
+      }
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _openGeneration) {
+        _isOpening = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<void> _startPlayback(
+    audio.AudioPlayer player,
+    int generation,
+  ) async {
+    try {
+      await player.play();
+    } on audio.PlayerInterruptedException {
+      // Loading another song intentionally interrupts the previous play call.
+    } catch (error) {
+      if (generation == _openGeneration && !_disposed) {
+        _setPlaybackError(error);
+      }
     }
   }
 
   Future<void> togglePlay() async {
-    final controller = _videoController;
-    if (controller == null) {
+    final player = _audioPlayer;
+    if (player == null || player.processingState == audio.ProcessingState.idle) {
       final currentItem = _item;
       if (currentItem != null) {
         await open(currentItem);
       }
       return;
     }
-    if (controller.value.isPlaying) {
-      await controller.pause();
+    if (player.playing) {
+      await player.pause();
     } else {
-      await controller.play();
+      if (player.processingState == audio.ProcessingState.completed) {
+        await player.seek(Duration.zero);
+      }
+      unawaited(_startPlayback(player, _openGeneration));
     }
-    notifyListeners();
+    _notify();
   }
 
   Future<void> playNext() async {
@@ -120,9 +190,9 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> playPrevious() async {
-    final controller = _videoController;
-    if (controller != null && controller.value.position.inSeconds > 5) {
-      await controller.seekTo(Duration.zero);
+    final player = _audioPlayer;
+    if (player != null && player.position.inSeconds > 5) {
+      await player.seek(Duration.zero);
       return;
     }
     final previous = _adjacentItem(-1);
@@ -132,26 +202,29 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> seekToFraction(double fraction) async {
-    final controller = _videoController;
-    if (controller == null || !controller.value.isInitialized) {
+    final player = _audioPlayer;
+    final loadedDuration = duration;
+    if (player == null || loadedDuration <= Duration.zero) {
       return;
     }
-    final duration = controller.value.duration;
     final target = Duration(
-      milliseconds: (duration.inMilliseconds * fraction.clamp(0, 1)).round(),
+      milliseconds:
+          (loadedDuration.inMilliseconds * fraction.clamp(0, 1)).round(),
     );
-    await controller.seekTo(target);
+    await player.seek(target);
   }
 
   void toggleShuffle() {
     _shuffleEnabled = !_shuffleEnabled;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> toggleRepeat() async {
     _repeatEnabled = !_repeatEnabled;
-    await _videoController?.setLooping(_repeatEnabled);
-    notifyListeners();
+    await _audioPlayer?.setLoopMode(
+      _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
+    );
+    _notify();
   }
 
   void toggleFavorite() {
@@ -162,11 +235,28 @@ class PlayerController extends ChangeNotifier {
     if (!_favoriteIds.add(currentItem.id)) {
       _favoriteIds.remove(currentItem.id);
     }
-    notifyListeners();
+    _notify();
+  }
+
+  audio.AudioPlayer _ensurePlayer() {
+    final existing = _audioPlayer;
+    if (existing != null) {
+      return existing;
+    }
+    final player = audio.AudioPlayer();
+    _audioPlayer = player;
+    _playerSubscriptions
+      ..add(player.playerStateStream.listen(_handlePlayerState))
+      ..add(player.positionStream.listen(_handlePosition))
+      ..add(player.durationStream.listen((_) => _notify()))
+      ..add(player.errorStream.listen(_handlePlayerError));
+    return player;
   }
 
   MediaItem? _adjacentItem(int direction) {
-    final queue = _libraryController.items;
+    final queue = _libraryController.items
+        .where((candidate) => candidate.kind == MediaKind.audio)
+        .toList(growable: false);
     final currentItem = _item;
     if (queue.isEmpty) {
       return null;
@@ -186,54 +276,11 @@ class PlayerController extends ChangeNotifier {
     return queue[nextIndex < 0 ? nextIndex + queue.length : nextIndex];
   }
 
-  void _handlePlaybackUpdate() {
-    final controller = _videoController;
-    if (controller == null) {
-      return;
-    }
-    final value = controller.value;
-    if (value.hasError && _error == null) {
-      if (_isRecovering) {
-        return;
-      }
-      final currentItem = _item;
-      if (currentItem != null && _recoveryAttempts < 3) {
-        final resumeAt = value.position;
-        final delay = Duration(milliseconds: 500 * (1 << _recoveryAttempts));
-        _recoveryAttempts += 1;
-        _isRecovering = true;
-        _isLoading = true;
-        notifyListeners();
-        unawaited(
-          Future<void>.delayed(delay)
-              .then((_) => _open(currentItem, resumeAt: resumeAt))
-              .whenComplete(() {
-            _isRecovering = false;
-            if (_videoController?.value.hasError == true && _error == null) {
-              _handlePlaybackUpdate();
-            }
-          }),
-        );
-      } else {
-        _error = AppException(
-          AppErrorCode.networkInterrupted,
-          message: 'The Telegram stream could not keep up. Check the connection and resume playback.',
-          cause: value.errorDescription,
-        );
-        notifyListeners();
-      }
-      return;
-    }
-    if (value.isPlaying &&
-        value.position - _recoveryBaseline > const Duration(seconds: 15)) {
-      _recoveryAttempts = 0;
-      _recoveryBaseline = value.position;
-    }
-    final duration = value.duration;
-    final reachedEnd = duration > Duration.zero &&
-        value.position >= duration &&
-        !value.isPlaying;
-    if (reachedEnd && !_repeatEnabled && !_isAdvancing) {
+  void _handlePlayerState(audio.PlayerState state) {
+    _notify();
+    if (state.processingState == audio.ProcessingState.completed &&
+        !_repeatEnabled &&
+        !_isAdvancing) {
       _isAdvancing = true;
       unawaited(
         playNext().whenComplete(() {
@@ -243,10 +290,67 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  void _handlePosition(Duration currentPosition) {
+    if (isPlaying &&
+        currentPosition - _recoveryBaseline > const Duration(seconds: 15)) {
+      _recoveryAttempts = 0;
+      _recoveryBaseline = currentPosition;
+    }
+    _notify();
+  }
+
+  void _handlePlayerError(audio.PlayerException error) {
+    if (_disposed || _isRecovering) {
+      return;
+    }
+    final currentItem = _item;
+    if (currentItem != null && _recoveryAttempts < 3) {
+      final resumeAt = position;
+      final delay = Duration(milliseconds: 500 * (1 << _recoveryAttempts));
+      _recoveryAttempts += 1;
+      _isRecovering = true;
+      _isOpening = true;
+      _notify();
+      unawaited(
+        Future<void>.delayed(delay)
+            .then((_) => _open(currentItem, resumeAt: resumeAt))
+            .whenComplete(() {
+          _isRecovering = false;
+        }),
+      );
+      return;
+    }
+    _setPlaybackError(error);
+  }
+
+  void _setPlaybackError(Object error) {
+    _isOpening = false;
+    _error = AppException(
+      AppErrorCode.networkInterrupted,
+      message:
+          'The Telegram audio stream stopped. Check the connection and resume playback.',
+      cause: error,
+    );
+    _notify();
+  }
+
+  void _notify() {
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
-    _videoController?.removeListener(_handlePlaybackUpdate);
-    unawaited(_videoController?.dispose());
+    _disposed = true;
+    _openGeneration += 1;
+    for (final subscription in _playerSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _playerSubscriptions.clear();
+    final player = _audioPlayer;
+    _audioPlayer = null;
+    unawaited(player?.dispose());
     super.dispose();
   }
 }

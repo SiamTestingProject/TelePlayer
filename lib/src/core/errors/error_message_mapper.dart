@@ -50,8 +50,8 @@ class ErrorMessageMapper {
         );
       case AppErrorCode.deletedMedia:
         return const FriendlyError(
-          title: 'Media was deleted',
-          body: 'The media file attached to this message is no longer available.',
+          title: 'Song was deleted',
+          body: 'The audio file attached to this message is no longer available.',
         );
       case AppErrorCode.privateChannel:
         return FriendlyError(
@@ -62,8 +62,8 @@ class ErrorMessageMapper {
         );
       case AppErrorCode.invalidMedia:
         return const FriendlyError(
-          title: 'Invalid media',
-          body: 'This item does not contain a playable video, audio file, or document.',
+          title: 'Invalid audio',
+          body: 'This item does not contain a playable Telegram audio file.',
         );
       case AppErrorCode.unsupportedCodec:
         return const FriendlyError(
@@ -98,8 +98,8 @@ class ErrorMessageMapper {
         );
       case AppErrorCode.missingThumbnail:
         return const FriendlyError(
-          title: 'Thumbnail unavailable',
-          body: 'This item can still be played, but Telegram did not provide a thumbnail.',
+          title: 'Artwork unavailable',
+          body: 'This song can still be played, but Telegram did not provide album artwork.',
         );
       case AppErrorCode.missingConfiguration:
         return const FriendlyError(
@@ -109,7 +109,7 @@ class ErrorMessageMapper {
       case AppErrorCode.cacheUnavailable:
         return const FriendlyError(
           title: 'Cache unavailable',
-          body: 'The local cache could not prepare this media range for playback.',
+          body: 'The local cache could not prepare this audio range for playback.',
         );
       case AppErrorCode.unknown:
         return const FriendlyError(

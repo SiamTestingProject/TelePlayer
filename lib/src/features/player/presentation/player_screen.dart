@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
@@ -54,7 +53,7 @@ class PlayerScreen extends StatelessWidget {
                             children: <Widget>[
                               _PlayerHeader(onClose: onClose),
                               const SizedBox(height: 14),
-                              Center(child: _SourcePill(item: item)),
+                              const Center(child: _SourcePill()),
                               const SizedBox(height: 24),
                               Center(
                                 child: SizedBox.square(
@@ -69,7 +68,6 @@ class PlayerScreen extends StatelessWidget {
                                       tag: 'artwork-${item.id}',
                                       child: _NowPlayingArtwork(
                                         item: item,
-                                        player: player,
                                       ),
                                     ),
                                   ),
@@ -108,7 +106,7 @@ class PlayerScreen extends StatelessWidget {
                                           ),
                                           const SizedBox(height: 5),
                                           Text(
-                                            item.artist ?? _mediaType(item),
+                                            item.artist ?? 'Telegram audio',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: Theme.of(context)
@@ -161,16 +159,10 @@ class PlayerScreen extends StatelessWidget {
       ),
     );
   }
-
-  String _mediaType(MediaItem item) {
-    return item.kind == MediaKind.audio ? 'Telegram audio' : 'Telegram video';
-  }
 }
 
 class _SourcePill extends StatelessWidget {
-  const _SourcePill({required this.item});
-
-  final MediaItem item;
+  const _SourcePill();
 
   @override
   Widget build(BuildContext context) {
@@ -186,15 +178,13 @@ class _SourcePill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(
-            item.kind == MediaKind.audio
-                ? Icons.music_note_rounded
-                : Icons.movie_rounded,
+            Icons.music_note_rounded,
             size: 18,
             color: colors.primary,
           ),
           const SizedBox(width: 7),
           Text(
-            item.kind == MediaKind.audio ? 'Telegram Audio' : 'Telegram Video',
+            'Telegram Audio',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: colors.onSurfaceVariant,
                   fontWeight: FontWeight.w800,
@@ -263,11 +253,7 @@ class _PlayerHeader extends StatelessWidget {
                 ),
                 for (final item in items)
                   ListTile(
-                    leading: Icon(
-                      item.kind == MediaKind.audio
-                          ? Icons.music_note_rounded
-                          : Icons.movie_rounded,
-                    ),
+                    leading: const Icon(Icons.music_note_rounded),
                     title: Text(item.title, maxLines: 1),
                     subtitle: item.artist == null ? null : Text(item.artist!),
                     selected: scope.playerController.item?.id == item.id,
@@ -289,32 +275,12 @@ class _PlayerHeader extends StatelessWidget {
 }
 
 class _NowPlayingArtwork extends StatelessWidget {
-  const _NowPlayingArtwork({required this.item, required this.player});
+  const _NowPlayingArtwork({required this.item});
 
   final MediaItem item;
-  final PlayerController player;
 
   @override
   Widget build(BuildContext context) {
-    final controller = player.videoController;
-    if (item.kind != MediaKind.audio &&
-        controller != null &&
-        controller.value.isInitialized) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(38),
-        child: ColoredBox(
-          color: Colors.black,
-          child: Center(
-            child: AspectRatio(
-              aspectRatio: controller.value.aspectRatio == 0
-                  ? 16 / 9
-                  : controller.value.aspectRatio,
-              child: VideoPlayer(controller),
-            ),
-          ),
-        ),
-      );
-    }
     return MediaArtwork(
       item: item,
       libraryController: AppScope.of(context).libraryController,
@@ -332,34 +298,16 @@ class _ProgressSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = player.videoController;
-    if (controller == null) {
-      return _ProgressContent(
-        position: Duration.zero,
-        duration: Duration(seconds: item.durationSeconds ?? 0),
-        item: item,
-        isBuffering: false,
-        onChanged: null,
-      );
-    }
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final value = controller.value;
-        final duration = value.duration > Duration.zero
-            ? value.duration
-            : Duration(seconds: item.durationSeconds ?? 0);
-        final position = value.position > duration ? duration : value.position;
-        return _ProgressContent(
-          position: position,
-          duration: duration,
-          item: item,
-          isBuffering: value.isBuffering,
-          onChanged: duration <= Duration.zero
-              ? null
-              : (fraction) => unawaited(player.seekToFraction(fraction)),
-        );
-      },
+    final duration = player.duration;
+    final position = player.position > duration ? duration : player.position;
+    return _ProgressContent(
+      position: position,
+      duration: duration,
+      item: item,
+      isBuffering: player.isBuffering,
+      onChanged: duration <= Duration.zero
+          ? null
+          : (fraction) => unawaited(player.seekToFraction(fraction)),
     );
   }
 }
@@ -458,8 +406,7 @@ class _PrimaryControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = player.videoController;
-    final playing = controller?.value.isPlaying == true;
+    final playing = player.isPlaying;
     final colors = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -658,7 +605,7 @@ class _EmptyPlayer extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Choose a song or video from your Telegram Library.',
+              'Choose a song from your Telegram Library.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.onSurfaceVariant,

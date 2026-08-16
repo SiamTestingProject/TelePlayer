@@ -26,6 +26,7 @@ void main() {
       telegramClient: telegram,
       streamingServer: LocalStreamingServer(telegram),
       catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
     );
     final progress = <ChannelCacheProgress>[];
     List<MediaItem>? availableItems;
@@ -55,11 +56,213 @@ void main() {
     expect(progress.last.completedThumbnails, 0);
     expect(progress.last.failedThumbnails, 1);
     expect(progress.last.processedThumbnails, 1);
+    expect(telegram.thumbnailAttempts, 3);
+    expect(telegram.refreshAttempts, 1);
+  });
+
+  test('uses Telegram inline artwork when full artwork stays unavailable', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-inline-artwork-test-',
+    );
+    final telegram = _ThumbnailFailureTelegramClient(
+      items: const <MediaItem>[
+        MediaItem(
+          id: '-1001:21:4',
+          chatId: -1001,
+          messageId: 21,
+          fileId: 4,
+          title: 'Inline Artwork Track',
+          fileName: 'inline-artwork.mp3',
+          mimeType: 'audio/mpeg',
+          size: 120,
+          kind: MediaKind.audio,
+          thumbnailFileId: 5,
+          inlineThumbnailBase64: 'AQIDBA==',
+        ),
+      ],
+    );
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    final progress = <ChannelCacheProgress>[];
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final items = await repository.cacheAll(
+      const AppSettings(
+        apiId: 1,
+        apiHash: 'test-hash',
+        channelIds: <int>[-1001],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+      onProgress: progress.add,
+    );
+    final bytes = await repository.loadThumbnail(items.single);
+
+    expect(bytes, orderedEquals(<int>[1, 2, 3, 4]));
+    expect(progress.last.phase, ChannelCachePhase.complete);
+    expect(progress.last.completedThumbnails, 1);
+    expect(progress.last.failedThumbnails, 0);
+  });
+
+  test('caches artwork discovered only after refreshing a song', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-refreshed-artwork-test-',
+    );
+    final telegram = _RefreshArtworkTelegramClient();
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final items = await repository.cacheAll(
+      const AppSettings(
+        apiId: 1,
+        apiHash: 'test-hash',
+        channelIds: <int>[-1001],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+      onProgress: (_) {},
+    );
+
+    expect(items.single.hasThumbnail, isFalse);
+    expect(telegram.refreshAttempts, 1);
+    expect(telegram.thumbnailAttempts, 1);
+
+    final cachedArtwork = await repository.loadThumbnail(items.single);
+    expect(cachedArtwork, orderedEquals(<int>[9, 8, 7, 6]));
+    expect(telegram.thumbnailAttempts, 1);
+  });
+
+  test('excludes Telegram video messages from the cached song library', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-audio-only-cache-test-',
+    );
+    final telegram = _ThumbnailFailureTelegramClient(
+      items: const <MediaItem>[
+        _ThumbnailFailureTelegramClient.defaultItem,
+        MediaItem(
+          id: '-1001:30:8',
+          chatId: -1001,
+          messageId: 30,
+          fileId: 8,
+          title: 'Video should be ignored',
+          fileName: 'ignored.mp4',
+          mimeType: 'video/mp4',
+          size: 400,
+          kind: MediaKind.document,
+        ),
+      ],
+    );
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final items = await repository.cacheAll(
+      const AppSettings(
+        apiId: 1,
+        apiHash: 'test-hash',
+        channelIds: <int>[-1001],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+      onProgress: (_) {},
+    );
+
+    expect(items, hasLength(1));
+    expect(items.single.kind, MediaKind.audio);
   });
 }
 
+class _RefreshArtworkTelegramClient extends _ThumbnailFailureTelegramClient {
+  _RefreshArtworkTelegramClient()
+      : super(
+          items: const <MediaItem>[
+            MediaItem(
+              id: '-1001:40:10',
+              chatId: -1001,
+              messageId: 40,
+              fileId: 10,
+              title: 'Refresh Artwork Track',
+              fileName: 'refresh-artwork.mp3',
+              mimeType: 'audio/mpeg',
+              size: 200,
+              kind: MediaKind.audio,
+            ),
+          ],
+        );
+
+  @override
+  Future<MediaItem> refreshMedia(MediaItem item) async {
+    refreshAttempts += 1;
+    return MediaItem(
+      id: item.id,
+      chatId: item.chatId,
+      messageId: item.messageId,
+      fileId: item.fileId,
+      title: item.title,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      size: item.size,
+      kind: item.kind,
+      dateEpochSeconds: item.dateEpochSeconds,
+      artist: item.artist,
+      durationSeconds: item.durationSeconds,
+      thumbnailFileId: 77,
+      inlineThumbnailBase64: item.inlineThumbnailBase64,
+      localPath: item.localPath,
+      parts: item.parts,
+    );
+  }
+
+  @override
+  Future<Uint8List?> loadThumbnail(MediaItem item) async {
+    thumbnailAttempts += 1;
+    expect(item.thumbnailFileId, 77);
+    return Uint8List.fromList(<int>[9, 8, 7, 6]);
+  }
+}
+
 class _ThumbnailFailureTelegramClient implements TelegramClient {
-  static const item = MediaItem(
+  _ThumbnailFailureTelegramClient({List<MediaItem>? items})
+      : items = items ?? <MediaItem>[defaultItem];
+
+  static const defaultItem = MediaItem(
     id: '-1001:20:2',
     chatId: -1001,
     messageId: 20,
@@ -72,6 +275,10 @@ class _ThumbnailFailureTelegramClient implements TelegramClient {
     thumbnailFileId: 3,
   );
 
+  final List<MediaItem> items;
+  int thumbnailAttempts = 0;
+  int refreshAttempts = 0;
+
   @override
   Stream<AuthStep> get authSteps => const Stream<AuthStep>.empty();
 
@@ -83,12 +290,18 @@ class _ThumbnailFailureTelegramClient implements TelegramClient {
     required List<int> channelIds,
     required void Function(MediaScanProgress progress) onProgress,
   }) async {
-    onProgress(const MediaScanProgress(scannedMessages: 1, mediaCount: 1));
-    return const <MediaItem>[item];
+    onProgress(
+      MediaScanProgress(
+        scannedMessages: items.length,
+        mediaCount: items.length,
+      ),
+    );
+    return items;
   }
 
   @override
   Future<Uint8List?> loadThumbnail(MediaItem item) {
+    thumbnailAttempts += 1;
     throw const AppException(
       AppErrorCode.telegramApi,
       message: 'File download has failed or was canceled',
@@ -100,10 +313,13 @@ class _ThumbnailFailureTelegramClient implements TelegramClient {
     required List<int> channelIds,
     required int limitPerChannel,
   }) async =>
-      const <MediaItem>[item];
+      items;
 
   @override
-  Future<MediaItem> refreshMedia(MediaItem item) async => item;
+  Future<MediaItem> refreshMedia(MediaItem item) async {
+    refreshAttempts += 1;
+    return item;
+  }
 
   @override
   Future<Uint8List> readFileRange(MediaItem item, int start, int end) async =>

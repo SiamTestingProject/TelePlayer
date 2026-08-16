@@ -1,21 +1,27 @@
 # TelePlayer
 
-A Flutter Material 3 app for Android and Windows that signs in to Telegram, browses configured channel media, and plays video and audio through a local range-aware streaming server.
+A Flutter Material 3 music app for Android and Windows that signs in to
+Telegram, browses songs from configured channels, and plays audio through a
+local range-aware streaming server.
 
-Version 1.2 adds an artwork-led music library, a persistent mini-player, a
-full-screen Now Playing experience, queue/shuffle/repeat/favorite controls, and
-lower-latency Telegram playback. Android permits the app's loopback HTTP media
-bridge, and open-ended player range requests receive proper `206 Partial
-Content` responses so native playback can initialize and seek reliably.
+Version 1.3 adds an artwork-led, audio-only Library, a persistent mini-player,
+a full-screen Now Playing experience, queue/shuffle/repeat/favorite controls,
+and lower-latency Telegram playback. Android playback now runs through a media
+foreground service, so songs continue while the app is backgrounded and remain
+controllable from the notification, lock screen, and headset buttons. Android
+also permits the app's loopback HTTP audio bridge, and open-ended player range
+requests receive proper `206 Partial Content` responses so native playback can
+initialize and seek reliably.
 
 The Library download button scans the complete history of every configured
-channel and persistently caches playable-file metadata plus the highest-quality
-thumbnail Telegram exposes. Cached catalog entries remain browsable when a
-later refresh is interrupted; media payloads stay in TDLib's managed cache and
-are downloaded as playback needs them.
-An unavailable or canceled Telegram thumbnail is skipped without discarding the
-successfully scanned media catalog. Library sorting provides separate, tappable
-**Newest** and **A-Z** choices and applies an explicit order in both modes.
+channel, ignores non-audio messages, and persistently caches song metadata plus
+the best album artwork Telegram exposes. Artwork downloads are retried after a
+message refresh, and Telegram's embedded mini artwork is retained as a fallback
+when the full thumbnail is unavailable. Cached catalog entries remain browsable
+when a later refresh is interrupted; audio payloads stay in TDLib's managed
+cache and are downloaded as playback needs them. Library sorting provides
+separate, tappable **Newest** and **A-Z** choices and applies an explicit order
+in both modes.
 
 ## Current Architecture
 
@@ -24,9 +30,9 @@ successfully scanned media catalog. Library sorting provides separate, tappable
 - Routing/app shell: `lib/src/app`
 - Telegram API/client: `lib/src/infrastructure/telegram`
 - Authentication: `lib/src/features/auth`
-- Media repository: `lib/src/features/library`
+- Audio repository: `lib/src/features/library`
 - Streaming: `lib/src/core/services/local_streaming_server.dart`
-- Media player: `lib/src/features/player`
+- Background audio player: `lib/src/features/player`
 - Local catalog/artwork cache: `lib/src/features/library/data/channel_catalog_cache.dart`
 - Media cache limits: `lib/src/core/services/local_cache_service.dart`
 - Settings: `lib/src/features/settings`
@@ -63,10 +69,12 @@ flutter run --dart-define=GITHUB_REPOSITORY=owner/repository
 ```
 
 On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project.
-The TDLib compatibility patch adds its required Android namespace and raises the
-plugin's `compileSdk` from API 31 to API 36. This is required because current
-AndroidX dependencies need API 34 or newer even though `tdlib` 1.6.0 still
-declares API 31.
+The identity step also installs the Android background-audio service, receiver,
+foreground-service permissions, and loopback streaming permission. The TDLib
+compatibility patch adds its required Android namespace and raises the plugin's
+`compileSdk` from API 31 to API 36. This is required because current AndroidX
+dependencies need API 34 or newer even though `tdlib` 1.6.0 still declares API
+31.
 
 ## App Updates
 
@@ -83,8 +91,8 @@ ignored by the in-app stable updater.
 
 The release repository is embedded at build time with
 `--dart-define=GITHUB_REPOSITORY=owner/repository`. GitHub Actions supplies this
-automatically. Android release builds also receive the Internet permission from
-`tool/configure_app_identity.py`.
+automatically. Android release builds also receive the background playback
+components and required permissions from `tool/configure_app_identity.py`.
 
 ## Release
 
@@ -92,19 +100,19 @@ Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Push a version tag such as `v1.2.0` to publish a normal GitHub Release instead.
+Push a version tag such as `v1.3.1` to publish a normal GitHub Release instead.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.2.0.apk`
-- `TelePlayer-v1.2.0-arm64.apk`
-- `TelePlayer-v1.2.0-armeabi-v7a.apk`
-- `TelePlayer-v1.2.0-x86_64.apk`
-- `TelePlayer-v1.2.0-aab.aab`
-- `TelePlayer-v1.2.0-Setup.exe`
-- `TelePlayer-v1.2.0-windows-x64.zip`
+- `TelePlayer-v1.3.1.apk`
+- `TelePlayer-v1.3.1-arm64.apk`
+- `TelePlayer-v1.3.1-armeabi-v7a.apk`
+- `TelePlayer-v1.3.1-x86_64.apk`
+- `TelePlayer-v1.3.1-aab.aab`
+- `TelePlayer-v1.3.1-Setup.exe`
+- `TelePlayer-v1.3.1-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

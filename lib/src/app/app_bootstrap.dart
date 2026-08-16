@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/widgets.dart';
 
 import '../core/services/local_streaming_server.dart';
@@ -34,6 +35,12 @@ class AppBootstrap {
   final AppUpdateController updateController;
 
   static Future<AppBootstrap> create() async {
+    // Tell Android/iOS that TelePlayer is a music player. This gives
+    // just_audio the correct media audio focus behavior when the UI moves to
+    // the background and avoids other plugins falling back to transient audio.
+    final audioSession = await AudioSession.instance;
+    await audioSession.configure(AudioSessionConfiguration.music());
+
     final settingsController = SettingsController(
       SettingsRepository(SecureConfigStore()),
     );

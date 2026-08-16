@@ -355,24 +355,11 @@ class _MiniPlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = player.videoController;
-    if (controller == null) {
-      return IconButton.filled(
-        tooltip: 'Play',
-        onPressed: () => unawaited(player.togglePlay()),
-        icon: const Icon(Icons.play_arrow_rounded),
-      );
-    }
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final playing = controller.value.isPlaying;
-        return IconButton.filled(
-          tooltip: playing ? 'Pause' : 'Play',
-          onPressed: () => unawaited(player.togglePlay()),
-          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-        );
-      },
+    final playing = player.isPlaying;
+    return IconButton.filled(
+      tooltip: playing ? 'Pause' : 'Play',
+      onPressed: () => unawaited(player.togglePlay()),
+      icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
     );
   }
 }

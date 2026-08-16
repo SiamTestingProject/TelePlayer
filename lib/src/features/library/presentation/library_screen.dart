@@ -9,8 +9,6 @@ import '../models/channel_cache_progress.dart';
 import '../models/media_item.dart';
 import 'media_artwork.dart';
 
-enum _LibraryFilter { songs, videos, all }
-
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({
     required this.onOpenPlayer,
@@ -29,7 +27,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
   bool _requestedInitialLoad = false;
   MediaSortOrder _sortOrder = MediaSortOrder.newest;
-  _LibraryFilter _filter = _LibraryFilter.songs;
   String _searchQuery = '';
 
   @override
@@ -58,10 +55,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final library = scope.libraryController;
     final visibleItems = _visibleItems(library.items);
     final colors = Theme.of(context).colorScheme;
-    final songCount = library.items
-        .where((item) => item.kind == MediaKind.audio)
-        .length;
-    final videoCount = library.items.length - songCount;
 
     return Scaffold(
       backgroundColor: colors.surface,
@@ -86,7 +79,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         ),
                       ),
                       IconButton.filledTonal(
-                        tooltip: 'Cache all channel metadata and thumbnails',
+                        tooltip: 'Cache all songs and album artwork',
                         onPressed: library.isCaching
                             ? null
                             : () => unawaited(_cacheAll(scope)),
@@ -135,18 +128,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: _FilterBar(
-                    selected: _filter,
-                    songCount: songCount,
-                    videoCount: videoCount,
-                    allCount: library.items.length,
-                    onChanged: (filter) => setState(() => _filter = filter),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: _LibrarySortRow(
                     visibleCount: visibleItems.length,
                     sortOrder: _sortOrder,
@@ -184,7 +165,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               if (!library.isLoading && visibleItems.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _EmptyLibrary(filter: _filter),
+                  child: const _EmptyLibrary(),
                 )
               else
                 SliverPadding(
@@ -213,13 +194,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   List<MediaItem> _visibleItems(List<MediaItem> items) {
-    final filtered = switch (_filter) {
-      _LibraryFilter.songs =>
-        items.where((item) => item.kind == MediaKind.audio).toList(),
-      _LibraryFilter.videos =>
-        items.where((item) => item.kind != MediaKind.audio).toList(),
-      _LibraryFilter.all => items.toList(),
-    };
+    final filtered = items
+        .where((item) => item.kind == MediaKind.audio)
+        .toList(growable: true);
     final query = _searchQuery.trim().toLowerCase();
     if (query.isNotEmpty) {
       filtered.removeWhere((item) {
@@ -255,8 +232,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         scope.libraryController.cacheProgress?.failedThumbnails ?? 0;
     final message = cached
         ? failedThumbnails == 0
-            ? '${scope.libraryController.items.length} media files and their best thumbnails are cached.'
-            : '${scope.libraryController.items.length} media files cached. '
+            ? '${scope.libraryController.items.length} songs and their best artwork are cached.'
+            : '${scope.libraryController.items.length} songs cached. '
                 '$failedThumbnails unavailable thumbnails were skipped.'
         : 'Channel caching stopped. Review the message above and try again.';
     ScaffoldMessenger.of(context)
@@ -335,8 +312,8 @@ class _LibraryMixCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final countLabel = totalCount == visibleCount
-        ? '$totalCount items'
-        : '$visibleCount of $totalCount items';
+        ? '$totalCount songs'
+        : '$visibleCount of $totalCount songs';
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
@@ -424,134 +401,6 @@ class _LibraryMixCard extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.selected,
-    required this.songCount,
-    required this.videoCount,
-    required this.allCount,
-    required this.onChanged,
-  });
-
-  final _LibraryFilter selected;
-  final int songCount;
-  final int videoCount;
-  final int allCount;
-  final ValueChanged<_LibraryFilter> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(32),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: _FilterSegment(
-              icon: Icons.music_note_rounded,
-              label: 'Songs',
-              count: songCount,
-              selected: selected == _LibraryFilter.songs,
-              onTap: () => onChanged(_LibraryFilter.songs),
-            ),
-          ),
-          Expanded(
-            child: _FilterSegment(
-              icon: Icons.movie_rounded,
-              label: 'Videos',
-              count: videoCount,
-              selected: selected == _LibraryFilter.videos,
-              onTap: () => onChanged(_LibraryFilter.videos),
-            ),
-          ),
-          Expanded(
-            child: _FilterSegment(
-              icon: Icons.grid_view_rounded,
-              label: 'All',
-              count: allCount,
-              selected: selected == _LibraryFilter.all,
-              onTap: () => onChanged(_LibraryFilter.all),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterSegment extends StatelessWidget {
-  const _FilterSegment({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final foreground =
-        selected ? colors.onPrimaryContainer : colors.onSurfaceVariant;
-    return Tooltip(
-      message: label,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(26),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-            decoration: BoxDecoration(
-              color: selected ? colors.primaryContainer : Colors.transparent,
-              borderRadius: BorderRadius.circular(26),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(icon, size: 21, color: foreground),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: foreground,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                      ),
-                ),
-                Text(
-                  count.toString(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: foreground.withValues(alpha: 0.78),
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -648,7 +497,6 @@ class _LibrarySearchField extends StatelessWidget {
   }
 }
 
-
 class _MediaTile extends StatelessWidget {
   const _MediaTile({required this.item, required this.onTap});
 
@@ -662,7 +510,7 @@ class _MediaTile extends StatelessWidget {
     final playing = scope.playerController.item?.id == item.id;
     final subtitle = item.artist?.trim().isNotEmpty == true
         ? item.artist!
-        : '${item.readableSize} · ${_typeLabel(item)}';
+        : '${item.readableSize} · Audio';
     final tileColor = playing
         ? colors.primaryContainer.withValues(alpha: 0.66)
         : colors.surfaceContainerLow;
@@ -750,30 +598,13 @@ class _MediaTile extends StatelessWidget {
       ),
     );
   }
-
-  String _typeLabel(MediaItem item) {
-    if (item.kind == MediaKind.audio) {
-      return 'Audio';
-    }
-    if (item.isSplit) {
-      return '${item.parts.length} parts';
-    }
-    return 'Video';
-  }
 }
 
 class _EmptyLibrary extends StatelessWidget {
-  const _EmptyLibrary({required this.filter});
-
-  final _LibraryFilter filter;
+  const _EmptyLibrary();
 
   @override
   Widget build(BuildContext context) {
-    final label = switch (filter) {
-      _LibraryFilter.songs => 'No songs found',
-      _LibraryFilter.videos => 'No videos found',
-      _LibraryFilter.all => 'No media found',
-    };
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -794,10 +625,13 @@ class _EmptyLibrary extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            Text(label, style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'No songs found',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             Text(
-              'No Telegram media matched this view.',
+              'No Telegram audio matched this Library.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,

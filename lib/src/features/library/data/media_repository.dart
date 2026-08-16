@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../../core/errors/app_exception.dart';
@@ -13,25 +14,32 @@ class MediaRepository {
     required TelegramClient telegramClient,
     required LocalStreamingServer streamingServer,
     ChannelCatalogCache? catalogCache,
+    Duration thumbnailRetryBaseDelay = const Duration(milliseconds: 250),
   })  : _telegramClient = telegramClient,
         _streamingServer = streamingServer,
-        _catalogCache = catalogCache ?? ChannelCatalogCache();
+        _catalogCache = catalogCache ?? ChannelCatalogCache(),
+        _thumbnailRetryBaseDelay = thumbnailRetryBaseDelay;
 
   final TelegramClient _telegramClient;
   final LocalStreamingServer _streamingServer;
   final ChannelCatalogCache _catalogCache;
+  final Duration _thumbnailRetryBaseDelay;
 
   Future<List<MediaItem>> loadRecent(AppSettings settings) async {
     final configuredChannels = settings.channelIds.toSet();
     final cached = (await _catalogCache.readItems())
-        .where((item) => configuredChannels.contains(item.chatId))
+        .where(
+          (item) =>
+              configuredChannels.contains(item.chatId) &&
+              item.kind == MediaKind.audio,
+        )
         .toList(growable: false);
     late final List<MediaItem> recent;
     try {
-      recent = await _telegramClient.listRecentMedia(
+      recent = (await _telegramClient.listRecentMedia(
         channelIds: settings.channelIds,
         limitPerChannel: 60,
-      );
+      )).where((item) => item.kind == MediaKind.audio).toList(growable: false);
     } catch (_) {
       if (cached.isNotEmpty) {
         return cached;
@@ -52,7 +60,7 @@ class MediaRepository {
     required void Function(ChannelCacheProgress progress) onProgress,
     void Function(List<MediaItem> items)? onItemsAvailable,
   }) async {
-    final items = await _telegramClient.listAllMedia(
+    final scannedItems = await _telegramClient.listAllMedia(
       channelIds: settings.channelIds,
       onProgress: (progress) {
         onProgress(
@@ -64,56 +72,78 @@ class MediaRepository {
         );
       },
     );
+    final items = scannedItems
+        .where((item) => item.kind == MediaKind.audio)
+        .toList(growable: false);
     await _catalogCache.writeItems(items);
     onItemsAvailable?.call(List<MediaItem>.unmodifiable(items));
 
-    final thumbnailItems = <int, MediaItem>{};
-    for (final item in items) {
-      final thumbnailId = item.thumbnailFileId;
-      if (thumbnailId != null) {
-        thumbnailItems.putIfAbsent(thumbnailId, () => item);
-      }
-    }
     var completed = 0;
     var failed = 0;
+    var nextIndex = 0;
     onProgress(
       ChannelCacheProgress(
         phase: ChannelCachePhase.thumbnails,
         mediaCount: items.length,
-        completedThumbnails: completed,
-        totalThumbnails: thumbnailItems.length,
+        completedThumbnails: 0,
+        totalThumbnails: items.length,
       ),
     );
-    for (final entry in thumbnailItems.entries) {
-      try {
-        final thumbnail = await loadThumbnail(entry.value);
-        if (thumbnail == null || thumbnail.isEmpty) {
+
+    // A song can have no thumbnail in a history response but gain an album
+    // cover after GetMessage refreshes its TDLib audio object. Cache every
+    // song rather than only the items that already advertise a thumbnail.
+    Future<void> worker() async {
+      while (true) {
+        final index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) {
+          return;
+        }
+        try {
+          final artwork = await loadThumbnail(
+            items[index],
+            retryRemote: true,
+          );
+          if (artwork == null || artwork.isEmpty) {
+            failed += 1;
+          } else {
+            completed += 1;
+          }
+        } on AppException catch (error) {
+          if (!_isRecoverableThumbnailFailure(error)) {
+            rethrow;
+          }
           failed += 1;
-        } else {
-          completed += 1;
+        } catch (_) {
+          // One malformed/unavailable artwork file must not abort a full
+          // channel cache. The song catalog itself is already safely stored.
+          failed += 1;
         }
-      } on AppException catch (error) {
-        if (!_isRecoverableThumbnailFailure(error)) {
-          rethrow;
-        }
-        failed += 1;
+        onProgress(
+          ChannelCacheProgress(
+            phase: ChannelCachePhase.thumbnails,
+            mediaCount: items.length,
+            completedThumbnails: completed,
+            totalThumbnails: items.length,
+            failedThumbnails: failed,
+          ),
+        );
       }
-      onProgress(
-        ChannelCacheProgress(
-          phase: ChannelCachePhase.thumbnails,
-          mediaCount: items.length,
-          completedThumbnails: completed,
-          totalThumbnails: thumbnailItems.length,
-          failedThumbnails: failed,
-        ),
-      );
     }
+
+    final workerCount =
+        items.isEmpty ? 0 : (items.length < 4 ? items.length : 4);
+    await Future.wait(
+      List<Future<void>>.generate(workerCount, (_) => worker()),
+    );
+
     onProgress(
       ChannelCacheProgress(
         phase: ChannelCachePhase.complete,
         mediaCount: items.length,
         completedThumbnails: completed,
-        totalThumbnails: thumbnailItems.length,
+        totalThumbnails: items.length,
         failedThumbnails: failed,
       ),
     );
@@ -131,6 +161,14 @@ class MediaRepository {
   }
 
   Future<Uri> streamUriFor(MediaItem item) {
+    if (item.kind != MediaKind.audio) {
+      return Future<Uri>.error(
+        const AppException(
+          AppErrorCode.invalidMedia,
+          message: 'TelePlayer supports Telegram audio files only.',
+        ),
+      );
+    }
     return _refreshAndRegister(item);
   }
 
@@ -139,20 +177,121 @@ class MediaRepository {
     return _streamingServer.register(refreshed);
   }
 
-  Future<Uint8List?> loadThumbnail(MediaItem item) async {
-    final thumbnailId = item.thumbnailFileId;
-    if (thumbnailId == null) {
+  Future<Uint8List?> loadThumbnail(
+    MediaItem item, {
+    bool retryRemote = false,
+  }) async {
+    // Item-keyed artwork survives cases where TDLib rotates a thumbnail file
+    // ID or where the original history item had no thumbnail ID at all.
+    final cachedArtwork = await _catalogCache.readArtwork(item);
+    if (cachedArtwork != null) {
+      return cachedArtwork;
+    }
+
+    final originalThumbnailId = item.thumbnailFileId;
+    if (originalThumbnailId != null) {
+      final cached = await _catalogCache.readThumbnail(originalThumbnailId);
+      if (cached != null) {
+        await _catalogCache.writeArtwork(item, cached);
+        return cached;
+      }
+    }
+
+    var inlineFallback = _decodeInlineThumbnail(item);
+    if (!retryRemote && originalThumbnailId == null) {
+      return inlineFallback;
+    }
+    if (!retryRemote && inlineFallback != null) {
+      return inlineFallback;
+    }
+
+    var currentItem = item;
+    var refreshedOnce = false;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (currentItem.thumbnailFileId == null && !refreshedOnce) {
+        try {
+          currentItem = await _telegramClient.refreshMedia(item);
+          refreshedOnce = true;
+          final refreshedInline = _decodeInlineThumbnail(currentItem);
+          if (refreshedInline != null && refreshedInline.isNotEmpty) {
+            inlineFallback = refreshedInline;
+          }
+        } on AppException catch (error) {
+          refreshedOnce = true;
+          if (!_isRecoverableThumbnailFailure(error)) {
+            rethrow;
+          }
+        }
+      }
+
+      final currentThumbnailId = currentItem.thumbnailFileId;
+      if (currentThumbnailId != null) {
+        final cached = await _catalogCache.readThumbnail(currentThumbnailId);
+        if (cached != null) {
+          await _catalogCache.writeArtwork(item, cached);
+          return cached;
+        }
+        try {
+          final downloaded = await _telegramClient.loadThumbnail(currentItem);
+          if (downloaded != null && downloaded.isNotEmpty) {
+            await _catalogCache.writeThumbnail(currentThumbnailId, downloaded);
+            if (originalThumbnailId != null &&
+                originalThumbnailId != currentThumbnailId) {
+              await _catalogCache.writeThumbnail(originalThumbnailId, downloaded);
+            }
+            await _catalogCache.writeArtwork(item, downloaded);
+            return downloaded;
+          }
+        } on AppException catch (error) {
+          if (!_isRecoverableThumbnailFailure(error)) {
+            rethrow;
+          }
+        }
+      }
+
+      if (!refreshedOnce) {
+        try {
+          currentItem = await _telegramClient.refreshMedia(item);
+          refreshedOnce = true;
+          final refreshedInline = _decodeInlineThumbnail(currentItem);
+          if (refreshedInline != null && refreshedInline.isNotEmpty) {
+            inlineFallback = refreshedInline;
+          }
+        } on AppException catch (error) {
+          refreshedOnce = true;
+          if (!_isRecoverableThumbnailFailure(error)) {
+            rethrow;
+          }
+        }
+      }
+
+      if (attempt < 2 && _thumbnailRetryBaseDelay > Duration.zero) {
+        await Future<void>.delayed(
+          Duration(
+            milliseconds:
+                _thumbnailRetryBaseDelay.inMilliseconds * (1 << attempt),
+          ),
+        );
+      }
+    }
+
+    if (inlineFallback != null && inlineFallback.isNotEmpty) {
+      await _catalogCache.writeArtwork(item, inlineFallback);
+    }
+    return inlineFallback;
+  }
+
+  Uint8List? _decodeInlineThumbnail(MediaItem item) {
+    final encoded = item.inlineThumbnailBase64?.trim() ?? '';
+    if (encoded.isEmpty) {
       return null;
     }
-    final cached = await _catalogCache.readThumbnail(thumbnailId);
-    if (cached != null) {
-      return cached;
+    try {
+      final bytes = base64Decode(encoded);
+      return bytes.isEmpty ? null : bytes;
+    } on FormatException {
+      return null;
     }
-    final downloaded = await _telegramClient.loadThumbnail(item);
-    if (downloaded != null && downloaded.isNotEmpty) {
-      await _catalogCache.writeThumbnail(thumbnailId, downloaded);
-    }
-    return downloaded;
   }
 
   List<MediaItem> _mergeById(
