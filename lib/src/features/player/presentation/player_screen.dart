@@ -20,118 +20,190 @@ class PlayerScreen extends StatelessWidget {
     final player = scope.playerController;
     final item = player.item;
     final colors = Theme.of(context).colorScheme;
-    final background = Color.alphaBlend(
-      colors.primary.withValues(alpha: 0.18),
-      colors.surface,
-    );
 
     return Scaffold(
-      backgroundColor: background,
-      body: SafeArea(
-        child: item == null
-            ? _EmptyPlayer(onClose: onClose)
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final artworkSize =
-                      (constraints.maxWidth - 56).clamp(240.0, 440.0).toDouble();
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 620),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            _PlayerHeader(onClose: onClose),
-                            const SizedBox(height: 34),
-                            Center(
-                              child: SizedBox.square(
-                                dimension: artworkSize,
-                                child: Hero(
-                                  tag: 'artwork-${item.id}',
-                                  child: _NowPlayingArtwork(
-                                    item: item,
-                                    player: player,
+      backgroundColor: colors.surface,
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[
+              colors.primaryContainer.withValues(alpha: 0.68),
+              colors.tertiaryContainer.withValues(alpha: 0.34),
+              colors.surface,
+            ],
+            stops: const <double>[0, 0.42, 1],
+          ),
+        ),
+        child: SafeArea(
+          child: item == null
+              ? _EmptyPlayer(onClose: onClose)
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final artworkSize = (constraints.maxWidth - 56)
+                        .clamp(240.0, 460.0)
+                        .toDouble();
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 620),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              _PlayerHeader(onClose: onClose),
+                              const SizedBox(height: 14),
+                              Center(child: _SourcePill(item: item)),
+                              const SizedBox(height: 24),
+                              Center(
+                                child: SizedBox.square(
+                                  dimension: artworkSize,
+                                  child: Material(
+                                    elevation: 18,
+                                    shadowColor:
+                                        colors.primary.withValues(alpha: 0.24),
+                                    borderRadius: BorderRadius.circular(38),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Hero(
+                                      tag: 'artwork-${item.id}',
+                                      child: _NowPlayingArtwork(
+                                        item: item,
+                                        player: player,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 36),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: <Widget>[
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(
-                                        item.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .headlineMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                              letterSpacing: -0.8,
-                                            ),
-                                      ),
-                                      const SizedBox(height: 5),
-                                      Text(
-                                        item.artist ?? _mediaType(item),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium
-                                            ?.copyWith(
-                                              color: colors.onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ],
+                              const SizedBox(height: 30),
+                              Container(
+                                padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceContainer
+                                      .withValues(alpha: 0.76),
+                                  borderRadius: BorderRadius.circular(30),
+                                  border: Border.all(
+                                    color: colors.outlineVariant
+                                        .withValues(alpha: 0.28),
                                   ),
                                 ),
-                                IconButton.filledTonal(
-                                  tooltip: 'Favorite',
-                                  onPressed: player.toggleFavorite,
-                                  icon: Icon(
-                                    player.isFavorite
-                                        ? Icons.favorite_rounded
-                                        : Icons.favorite_border_rounded,
-                                  ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: <Widget>[
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            item.title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .headlineMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: 0,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            item.artist ?? _mediaType(item),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  color: colors.onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton.filledTonal(
+                                      tooltip: 'Favorite',
+                                      onPressed: player.toggleFavorite,
+                                      icon: Icon(
+                                        player.isFavorite
+                                            ? Icons.favorite_rounded
+                                            : Icons.favorite_border_rounded,
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                              ),
+                              const SizedBox(height: 24),
+                              if (player.error != null) ...<Widget>[
+                                ErrorPanel(
+                                  error: player.error!,
+                                  onAction: () => unawaited(player.open(item)),
+                                ),
+                                const SizedBox(height: 16),
                               ],
-                            ),
-                            const SizedBox(height: 24),
-                            if (player.error != null) ...<Widget>[
-                              ErrorPanel(
-                                error: player.error!,
-                                onAction: () => unawaited(player.open(item)),
-                              ),
-                              const SizedBox(height: 16),
+                              if (player.isLoading) ...<Widget>[
+                                const LinearProgressIndicator(),
+                                const SizedBox(height: 16),
+                              ],
+                              _ProgressSection(player: player, item: item),
+                              const SizedBox(height: 24),
+                              _PrimaryControls(player: player),
+                              const SizedBox(height: 22),
+                              _PlaybackModes(player: player),
                             ],
-                            if (player.isLoading) ...<Widget>[
-                              const LinearProgressIndicator(),
-                              const SizedBox(height: 16),
-                            ],
-                            _ProgressSection(player: player, item: item),
-                            const SizedBox(height: 26),
-                            _PrimaryControls(player: player),
-                            const SizedBox(height: 24),
-                            _PlaybackModes(player: player),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }
 
   String _mediaType(MediaItem item) {
     return item.kind == MediaKind.audio ? 'Telegram audio' : 'Telegram video';
+  }
+}
+
+class _SourcePill extends StatelessWidget {
+  const _SourcePill({required this.item});
+
+  final MediaItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            item.kind == MediaKind.audio
+                ? Icons.music_note_rounded
+                : Icons.movie_rounded,
+            size: 18,
+            color: colors.primary,
+          ),
+          const SizedBox(width: 7),
+          Text(
+            item.kind == MediaKind.audio ? 'Telegram Audio' : 'Telegram Video',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -176,26 +248,38 @@ class _PlayerHeader extends StatelessWidget {
         builder: (context) {
           final items = scope.libraryController.items;
           return SafeArea(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return ListTile(
-                  leading: Icon(
-                    item.kind == MediaKind.audio
-                        ? Icons.music_note_rounded
-                        : Icons.movie_rounded,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+                  child: Text(
+                    'Up Next',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                        ),
                   ),
-                  title: Text(item.title, maxLines: 1),
-                  subtitle: item.artist == null ? null : Text(item.artist!),
-                  selected: scope.playerController.item?.id == item.id,
-                  onTap: () {
-                    Navigator.pop(context);
-                    unawaited(scope.playerController.open(item));
-                  },
-                );
-              },
+                ),
+                for (final item in items)
+                  ListTile(
+                    leading: Icon(
+                      item.kind == MediaKind.audio
+                          ? Icons.music_note_rounded
+                          : Icons.movie_rounded,
+                    ),
+                    title: Text(item.title, maxLines: 1),
+                    subtitle: item.artist == null ? null : Text(item.artist!),
+                    selected: scope.playerController.item?.id == item.id,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      unawaited(scope.playerController.open(item));
+                    },
+                  ),
+              ],
             ),
           );
         },
@@ -217,7 +301,7 @@ class _NowPlayingArtwork extends StatelessWidget {
         controller != null &&
         controller.value.isInitialized) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(34),
+        borderRadius: BorderRadius.circular(38),
         child: ColoredBox(
           color: Colors.black,
           child: Center(
@@ -234,7 +318,7 @@ class _NowPlayingArtwork extends StatelessWidget {
     return MediaArtwork(
       item: item,
       libraryController: AppScope.of(context).libraryController,
-      borderRadius: 34,
+      borderRadius: 38,
       iconSize: 82,
     );
   }
@@ -299,34 +383,45 @@ class _ProgressContent extends StatelessWidget {
             .clamp(0.0, 1.0)
             .toDouble();
     final type = item.mimeType.split('/').last.toUpperCase();
-    return Column(
-      children: <Widget>[
-        Slider(
-          value: fraction,
-          onChanged: onChanged,
-        ),
-        Row(
-          children: <Widget>[
-            Text(_time(position)),
-            Expanded(
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Text(
-                    '${item.readableSize} · $type',
-                    style: Theme.of(context).textTheme.labelMedium,
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        children: <Widget>[
+          Slider(
+            value: fraction,
+            onChanged: onChanged,
+          ),
+          Row(
+            children: <Widget>[
+              Text(_time(position)),
+              Expanded(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Text(
+                      '${item.readableSize} · $type',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
                   ),
                 ),
               ),
-            ),
-            Text(_time(duration)),
-          ],
-        ),
-      ],
+              Text(_time(duration)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -347,26 +442,35 @@ class _PrimaryControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = player.videoController;
     final playing = controller?.value.isPlaying == true;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: <Widget>[
-        _LargeControlButton(
-          tooltip: 'Previous',
-          icon: Icons.skip_previous_rounded,
-          onPressed: () => unawaited(player.playPrevious()),
-        ),
-        _LargeControlButton(
-          tooltip: playing ? 'Pause' : 'Play',
-          icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          emphasized: true,
-          onPressed: () => unawaited(player.togglePlay()),
-        ),
-        _LargeControlButton(
-          tooltip: 'Next',
-          icon: Icons.skip_next_rounded,
-          onPressed: () => unawaited(player.playNext()),
-        ),
-      ],
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHigh.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(42),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: <Widget>[
+          _LargeControlButton(
+            tooltip: 'Previous',
+            icon: Icons.skip_previous_rounded,
+            onPressed: () => unawaited(player.playPrevious()),
+          ),
+          _LargeControlButton(
+            tooltip: playing ? 'Pause' : 'Play',
+            icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            emphasized: true,
+            onPressed: () => unawaited(player.togglePlay()),
+          ),
+          _LargeControlButton(
+            tooltip: 'Next',
+            icon: Icons.skip_next_rounded,
+            onPressed: () => unawaited(player.playNext()),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -390,19 +494,19 @@ class _LargeControlButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: SizedBox.square(
-        dimension: emphasized ? 108 : 92,
+        dimension: emphasized ? 88 : 68,
         child: Material(
-          color: emphasized ? colors.tertiaryContainer : colors.primaryContainer,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(36)),
+          color: emphasized ? colors.primary : colors.surfaceContainerHighest,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(emphasized ? 32 : 26),
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onPressed,
             child: Icon(
               icon,
-              size: emphasized ? 48 : 40,
-              color: emphasized
-                  ? colors.onTertiaryContainer
-                  : colors.onPrimaryContainer,
+              size: emphasized ? 42 : 32,
+              color: emphasized ? colors.onPrimary : colors.onSurfaceVariant,
             ),
           ),
         ),
@@ -422,8 +526,9 @@ class _PlaybackModes extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
+        color: colors.surfaceContainer.withValues(alpha: 0.76),
         borderRadius: BorderRadius.circular(34),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.24)),
       ),
       child: Row(
         children: <Widget>[
@@ -480,14 +585,19 @@ class _ModeButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 3),
         child: Material(
-          color: selected ? colors.secondaryContainer : Colors.transparent,
+          color: selected ? colors.primaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(27),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onPressed,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 15),
-              child: Icon(icon),
+              child: Icon(
+                icon,
+                color: selected
+                    ? colors.onPrimaryContainer
+                    : colors.onSurfaceVariant,
+              ),
             ),
           ),
         ),
@@ -503,16 +613,25 @@ class _EmptyPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
-              Icons.headphones_rounded,
-              size: 84,
-              color: Theme.of(context).colorScheme.primary,
+            Container(
+              width: 108,
+              height: 108,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: BorderRadius.circular(34),
+              ),
+              child: Icon(
+                Icons.headphones_rounded,
+                size: 66,
+                color: colors.onPrimaryContainer,
+              ),
             ),
             const SizedBox(height: 20),
             Text(
@@ -520,9 +639,12 @@ class _EmptyPlayer extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Choose a song or video from your Telegram Library.',
               textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(

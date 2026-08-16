@@ -44,9 +44,9 @@ Install Flutter 3.44.8 or newer, then run:
 
 ```bash
 flutter create --platforms=android,windows --project-name telegram_media_player .
-python3 tool/configure_app_identity.py --platform all
+python tool/configure_app_identity.py --platform all
 flutter pub get
-python3 tool/patch_tdlib_android_namespace.py --compile-sdk 36
+python tool/patch_tdlib_android_namespace.py --compile-sdk 36
 flutter analyze
 flutter test
 flutter run --dart-define=GITHUB_REPOSITORY=owner/repository

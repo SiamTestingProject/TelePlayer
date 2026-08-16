@@ -61,6 +61,7 @@ class _ArtworkFallback extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: <Color>[
             colors.primaryContainer,
+            colors.secondaryContainer,
             colors.tertiaryContainer,
           ],
         ),

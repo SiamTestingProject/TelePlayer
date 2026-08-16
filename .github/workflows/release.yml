@@ -21,11 +21,17 @@ env:
 jobs:
   android:
     name: Build Android artifacts
+    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install Java
         uses: actions/setup-java@v4
@@ -50,7 +56,7 @@ jobs:
         run: git checkout -- lib test pubspec.yaml analysis_options.yaml
 
       - name: Apply TelePlayer Android identity
-        run: python3 tool/configure_app_identity.py --platform android
+        run: python tool/configure_app_identity.py --platform android
 
       - name: Configure Android signing
         env:
@@ -74,20 +80,20 @@ jobs:
           keyAlias=$ANDROID_KEY_ALIAS
           storeFile=upload-keystore.jks
           EOF
-          python3 tool/configure_android_signing.py
+          python tool/configure_android_signing.py
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Validate build configuration tools
-        run: python3 -m unittest discover -s tool -p "test_*.py"
+        run: python -m unittest discover -s tool -p "test_*.py"
 
       - name: Validate release tag matches app version
-        if: github.ref_type == 'tag'
-        run: python3 tool/validate_release_version.py --tag "${{ github.ref_name }}"
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'release' && startsWith(github.event.release.tag_name || '', 'v'))
+        run: python tool/validate_release_version.py --tag "${{ github.event.release.tag_name || github.ref_name }}"
 
       - name: Patch tdlib Android build configuration
-        run: python3 tool/patch_tdlib_android_namespace.py --compile-sdk "$ANDROID_COMPILE_SDK"
+        run: python tool/patch_tdlib_android_namespace.py --compile-sdk "$ANDROID_COMPILE_SDK"
 
       - name: Run static analysis
         run: flutter analyze --fatal-infos
@@ -144,11 +150,17 @@ jobs:
 
   windows:
     name: Build Windows artifact
+    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
     runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -170,14 +182,14 @@ jobs:
         run: git checkout -- lib test pubspec.yaml analysis_options.yaml
 
       - name: Apply TelePlayer Windows identity
-        run: python3 tool/configure_app_identity.py --platform windows
+        run: python tool/configure_app_identity.py --platform windows
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Validate release tag matches app version
-        if: github.ref_type == 'tag'
-        run: python3 tool/validate_release_version.py --tag "${{ github.ref_name }}"
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'release' && startsWith(github.event.release.tag_name || '', 'v'))
+        run: python tool/validate_release_version.py --tag "${{ github.event.release.tag_name || github.ref_name }}"
 
       - name: Run static analysis
         run: flutter analyze --fatal-infos
@@ -312,6 +324,7 @@ jobs:
   release:
     name: Publish all GitHub Release assets
     needs: [android, windows]
+    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
     runs-on: ubuntu-latest
 
     steps:

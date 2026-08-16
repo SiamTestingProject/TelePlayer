@@ -56,9 +56,9 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Material(
-      color: colors.surfaceContainerLow,
+      color: colors.surfaceContainer,
       clipBehavior: Clip.antiAlias,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(38)),
       child: ListView(
         controller: widget.scrollController,
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
@@ -73,12 +73,70 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 34),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(34),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  colors.primaryContainer,
+                  colors.secondaryContainer.withValues(alpha: 0.86),
+                  colors.tertiaryContainer.withValues(alpha: 0.68),
+                ],
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: colors.surface.withValues(alpha: 0.52),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Icon(
+                    Icons.system_update_alt_rounded,
+                    size: 40,
+                    color: colors.primary,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'TelePlayer Update',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: colors.onPrimaryContainer,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'v${widget.update.version}',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: colors.onPrimaryContainer.withValues(alpha: 0.78),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 26),
           Text(
             'Changelog',
             textAlign: TextAlign.center,
             style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
             ),
           ),
           const SizedBox(height: 24),
@@ -122,7 +180,7 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
           const SizedBox(height: 26),
           Card(
             margin: EdgeInsets.zero,
-            color: colors.surfaceContainer,
+            color: colors.surfaceContainerHigh,
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(28),

@@ -58,99 +58,141 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final settingsController = AppScope.of(context).settingsController;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (settingsController.error != null) ...[
-                    ErrorPanel(error: settingsController.error!),
-                    const SizedBox(height: 16),
-                  ],
-                  TextField(
-                    controller: _apiIdController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Telegram API ID',
-                      prefixIcon: Icon(Icons.numbers_outlined),
-                      border: OutlineInputBorder(),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[
+              colors.secondaryContainer.withValues(alpha: 0.44),
+              colors.surface,
+              colors.surface,
+            ],
+            stops: const <double>[0, 0.42, 1],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+              children: <Widget>[
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _SettingsHeader(
+                          isSaving: settingsController.isLoading,
+                          onSave: settingsController.isLoading
+                              ? null
+                              : () => unawaited(_save()),
+                        ),
+                        const SizedBox(height: 18),
+                        const _SettingsHero(),
+                        const SizedBox(height: 18),
+                        if (settingsController.error != null) ...<Widget>[
+                          ErrorPanel(error: settingsController.error!),
+                          const SizedBox(height: 16),
+                        ],
+                        _SettingsSection(
+                          icon: Icons.key_rounded,
+                          title: 'Telegram',
+                          subtitle: 'Account and channel access',
+                          children: <Widget>[
+                            TextField(
+                              controller: _apiIdController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Telegram API ID',
+                                prefixIcon: Icon(Icons.numbers_outlined),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _apiHashController,
+                              obscureText: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Telegram API hash',
+                                prefixIcon: Icon(Icons.key_outlined),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _channelsController,
+                              decoration: const InputDecoration(
+                                labelText: 'Channel IDs',
+                                prefixIcon: Icon(Icons.forum_outlined),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        _SettingsSection(
+                          icon: Icons.tune_rounded,
+                          title: 'Playback',
+                          subtitle: 'Streaming and cache behavior',
+                          children: <Widget>[
+                            TextField(
+                              controller: _cacheController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Cache limit MB',
+                                prefixIcon: Icon(Icons.storage_outlined),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SwitchListTile.adaptive(
+                              value: _preferWifi,
+                              onChanged: (value) => setState(() => _preferWifi = value),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 6),
+                              title: const Text('Prefer Wi-Fi'),
+                              secondary: const Icon(Icons.wifi_outlined),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_showWindowsTdjsonPath) ...<Widget>[
+                          const SizedBox(height: 14),
+                          _SettingsSection(
+                            icon: Icons.desktop_windows_rounded,
+                            title: 'Windows',
+                            subtitle: 'Local TDLib runtime',
+                            children: <Widget>[
+                              TextField(
+                                controller: _tdjsonController,
+                                decoration: const InputDecoration(
+                                  labelText: 'TDJSON DLL path',
+                                  hintText: r'C:\tdlib\bin\tdjson.dll',
+                                  prefixIcon: Icon(Icons.folder_open_outlined),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        _SettingsSection(
+                          icon: Icons.system_update_alt_rounded,
+                          title: 'Updates',
+                          subtitle: 'GitHub release checks',
+                          children: <Widget>[
+                            _AppUpdateTile(
+                              controller: AppScope.of(context).updateController,
+                              onPressed: _checkForUpdates,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _apiHashController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Telegram API hash',
-                      prefixIcon: Icon(Icons.key_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _channelsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Channel IDs',
-                      prefixIcon: Icon(Icons.forum_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _cacheController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Cache limit MB',
-                      prefixIcon: Icon(Icons.storage_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  if (_showWindowsTdjsonPath) ...[
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _tdjsonController,
-                      decoration: const InputDecoration(
-                        labelText: 'TDJSON DLL path',
-                        hintText: r'C:\tdlib\bin\tdjson.dll',
-                        prefixIcon: Icon(Icons.folder_open_outlined),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    value: _preferWifi,
-                    onChanged: (value) => setState(() => _preferWifi = value),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Prefer Wi-Fi'),
-                    secondary: const Icon(Icons.wifi_outlined),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: settingsController.isLoading ? null : () => unawaited(_save()),
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save'),
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    'TelePlayer',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  _AppUpdateTile(
-                    controller: AppScope.of(context).updateController,
-                    onPressed: _checkForUpdates,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -208,6 +250,176 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+class _SettingsHeader extends StatelessWidget {
+  const _SettingsHeader({
+    required this.isSaving,
+    required this.onSave,
+  });
+
+  final bool isSaving;
+  final VoidCallback? onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            'Settings',
+            style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+          ),
+        ),
+        FilledButton.icon(
+          onPressed: onSave,
+          icon: isSaving
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_outlined),
+          label: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SettingsHero extends StatelessWidget {
+  const _SettingsHero();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(36),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            colors.primaryContainer,
+            colors.secondaryContainer.withValues(alpha: 0.86),
+            colors.tertiaryContainer.withValues(alpha: 0.68),
+          ],
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 74,
+            height: 74,
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: 0.52),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Icon(
+              Icons.equalizer_rounded,
+              size: 42,
+              color: colors.primary,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'TelePlayer',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: colors.onPrimaryContainer,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Telegram media, tuned your way',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: colors.onPrimaryContainer.withValues(alpha: 0.76),
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsSection extends StatelessWidget {
+  const _SettingsSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainer.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(32),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(icon, color: colors.onPrimaryContainer),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _AppUpdateTile extends StatelessWidget {
   const _AppUpdateTile({
     required this.controller,
@@ -219,6 +431,7 @@ class _AppUpdateTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
@@ -228,13 +441,13 @@ class _AppUpdateTile extends StatelessWidget {
           AppUpdateStatus.upToDate => controller.message ?? 'TelePlayer is up to date.',
           AppUpdateStatus.updateAvailable =>
             controller.message ?? 'A newer TelePlayer release is available.',
-          AppUpdateStatus.error =>
-            controller.message ?? 'The update check failed.',
+          AppUpdateStatus.error => controller.message ?? 'The update check failed.',
           AppUpdateStatus.opening => 'Opening the update download...',
           AppUpdateStatus.idle => 'Check for a newer GitHub release',
         };
-        return Card(
-          margin: EdgeInsets.zero,
+        return Material(
+          color: colors.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(26),
           clipBehavior: Clip.antiAlias,
           child: ListTile(
             onTap: controller.isBusy ? null : onPressed,
