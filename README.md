@@ -13,6 +13,9 @@ channel and persistently caches playable-file metadata plus the highest-quality
 thumbnail Telegram exposes. Cached catalog entries remain browsable when a
 later refresh is interrupted; media payloads stay in TDLib's managed cache and
 are downloaded as playback needs them.
+An unavailable or canceled Telegram thumbnail is skipped without discarding the
+successfully scanned media catalog. Library sorting provides separate, tappable
+**Newest** and **A-Z** choices and applies an explicit order in both modes.
 
 ## Current Architecture
 

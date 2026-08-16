@@ -29,6 +29,7 @@ void main() {
       mimeType: 'audio/flac',
       size: 44200000,
       kind: MediaKind.audio,
+      dateEpochSeconds: 123456,
       artist: 'Example Artist',
       durationSeconds: 178,
       thumbnailFileId: 88,
@@ -54,6 +55,7 @@ void main() {
     expect(restored.single.title, item.title);
     expect(restored.single.artist, item.artist);
     expect(restored.single.durationSeconds, item.durationSeconds);
+    expect(restored.single.dateEpochSeconds, item.dateEpochSeconds);
     expect(restored.single.parts, hasLength(1));
     expect(restored.single.parts.single.partNumber, 1);
     expect(thumbnail, <int>[1, 2, 3, 4]);

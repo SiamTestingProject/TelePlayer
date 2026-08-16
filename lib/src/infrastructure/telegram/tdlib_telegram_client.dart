@@ -615,6 +615,8 @@ class TdlibTelegramClient implements TelegramClient {
       mimeType: mimeType,
       size: fileSize,
       kind: split == null ? kind : MediaKind.splitVideo,
+      dateEpochSeconds:
+          int.tryParse(message['date']?.toString() ?? '') ?? 0,
       artist: _artistForMedia(media),
       durationSeconds: int.tryParse(media['duration']?.toString() ?? ''),
       thumbnailFileId: _thumbnailFileId(media),

@@ -2,6 +2,8 @@ import '../../../core/utils/file_name_utils.dart';
 
 enum MediaKind { video, audio, document, splitVideo }
 
+enum MediaSortOrder { newest, alphabetical }
+
 class MediaItem {
   const MediaItem({
     required this.id,
@@ -13,6 +15,7 @@ class MediaItem {
     required this.mimeType,
     required this.size,
     required this.kind,
+    this.dateEpochSeconds = 0,
     this.artist,
     this.durationSeconds,
     this.thumbnailFileId,
@@ -29,6 +32,7 @@ class MediaItem {
   final String mimeType;
   final int size;
   final MediaKind kind;
+  final int dateEpochSeconds;
   final String? artist;
   final int? durationSeconds;
   final int? thumbnailFileId;
@@ -53,6 +57,8 @@ class MediaItem {
         (kind) => kind.name == json['kind']?.toString(),
         orElse: () => MediaKind.document,
       ),
+      dateEpochSeconds:
+          int.tryParse(json['dateEpochSeconds']?.toString() ?? '') ?? 0,
       artist: json['artist']?.toString(),
       durationSeconds:
           int.tryParse(json['durationSeconds']?.toString() ?? ''),
@@ -76,6 +82,7 @@ class MediaItem {
         'mimeType': mimeType,
         'size': size,
         'kind': kind.name,
+        'dateEpochSeconds': dateEpochSeconds,
         if (artist != null) 'artist': artist,
         if (durationSeconds != null) 'durationSeconds': durationSeconds,
         if (thumbnailFileId != null) 'thumbnailFileId': thumbnailFileId,
@@ -98,6 +105,7 @@ class MediaItem {
       mimeType: mimeType,
       size: size ?? this.size,
       kind: kind,
+      dateEpochSeconds: dateEpochSeconds,
       artist: artist,
       durationSeconds: durationSeconds,
       thumbnailFileId: thumbnailFileId,
@@ -139,4 +147,36 @@ class MediaPart {
         'partNumber': partNumber,
         'size': size,
       };
+}
+
+int compareMediaItems(
+  MediaItem left,
+  MediaItem right,
+  MediaSortOrder order,
+) {
+  if (order == MediaSortOrder.alphabetical) {
+    final titleComparison = left.title.trim().toLowerCase().compareTo(
+          right.title.trim().toLowerCase(),
+        );
+    if (titleComparison != 0) {
+      return titleComparison;
+    }
+    final artistComparison = (left.artist ?? '').trim().toLowerCase().compareTo(
+          (right.artist ?? '').trim().toLowerCase(),
+        );
+    if (artistComparison != 0) {
+      return artistComparison;
+    }
+  }
+
+  final dateComparison =
+      right.dateEpochSeconds.compareTo(left.dateEpochSeconds);
+  if (dateComparison != 0) {
+    return dateComparison;
+  }
+  final messageComparison = right.messageId.compareTo(left.messageId);
+  if (messageComparison != 0) {
+    return messageComparison;
+  }
+  return right.id.compareTo(left.id);
 }

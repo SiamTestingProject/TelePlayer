@@ -50,6 +50,7 @@ class MediaRepository {
   Future<List<MediaItem>> cacheAll(
     AppSettings settings, {
     required void Function(ChannelCacheProgress progress) onProgress,
+    void Function(List<MediaItem> items)? onItemsAvailable,
   }) async {
     final items = await _telegramClient.listAllMedia(
       channelIds: settings.channelIds,
@@ -64,6 +65,7 @@ class MediaRepository {
       },
     );
     await _catalogCache.writeItems(items);
+    onItemsAvailable?.call(List<MediaItem>.unmodifiable(items));
 
     final thumbnailItems = <int, MediaItem>{};
     for (final item in items) {
@@ -73,6 +75,7 @@ class MediaRepository {
       }
     }
     var completed = 0;
+    var failed = 0;
     onProgress(
       ChannelCacheProgress(
         phase: ChannelCachePhase.thumbnails,
@@ -83,20 +86,25 @@ class MediaRepository {
     );
     for (final entry in thumbnailItems.entries) {
       try {
-        await loadThumbnail(entry.value);
+        final thumbnail = await loadThumbnail(entry.value);
+        if (thumbnail == null || thumbnail.isEmpty) {
+          failed += 1;
+        } else {
+          completed += 1;
+        }
       } on AppException catch (error) {
-        if (error.code != AppErrorCode.missingThumbnail &&
-            error.code != AppErrorCode.deletedMedia) {
+        if (!_isRecoverableThumbnailFailure(error)) {
           rethrow;
         }
+        failed += 1;
       }
-      completed += 1;
       onProgress(
         ChannelCacheProgress(
           phase: ChannelCachePhase.thumbnails,
           mediaCount: items.length,
           completedThumbnails: completed,
           totalThumbnails: thumbnailItems.length,
+          failedThumbnails: failed,
         ),
       );
     }
@@ -106,9 +114,20 @@ class MediaRepository {
         mediaCount: items.length,
         completedThumbnails: completed,
         totalThumbnails: thumbnailItems.length,
+        failedThumbnails: failed,
       ),
     );
     return items;
+  }
+
+  bool _isRecoverableThumbnailFailure(AppException error) {
+    return switch (error.code) {
+      AppErrorCode.missingThumbnail ||
+      AppErrorCode.deletedMedia ||
+      AppErrorCode.cacheUnavailable ||
+      AppErrorCode.telegramApi => true,
+      _ => false,
+    };
   }
 
   Future<Uri> streamUriFor(MediaItem item) {

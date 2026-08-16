@@ -77,6 +77,11 @@ class MediaLibraryController extends ChangeNotifier {
     try {
       final items = await _repository.cacheAll(
         settings,
+        onItemsAvailable: (availableItems) {
+          _items = availableItems;
+          _thumbnailRequests.clear();
+          notifyListeners();
+        },
         onProgress: (progress) {
           _cacheProgress = progress;
           notifyListeners();

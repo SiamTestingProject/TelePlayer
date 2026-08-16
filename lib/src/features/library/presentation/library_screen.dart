@@ -28,7 +28,7 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
   bool _requestedInitialLoad = false;
-  bool _sortByTitle = false;
+  MediaSortOrder _sortOrder = MediaSortOrder.newest;
   _LibraryFilter _filter = _LibraryFilter.songs;
   String _searchQuery = '';
 
@@ -149,8 +149,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: _LibrarySortRow(
                     visibleCount: visibleItems.length,
-                    sortByTitle: _sortByTitle,
-                    onToggleSort: () => setState(() => _sortByTitle = !_sortByTitle),
+                    sortOrder: _sortOrder,
+                    onChanged: (order) => setState(() => _sortOrder = order),
                   ),
                 ),
               ),
@@ -230,13 +230,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             !item.mimeType.toLowerCase().contains(query);
       });
     }
-    if (_sortByTitle) {
-      filtered.sort(
-        (left, right) => left.title.toLowerCase().compareTo(
-              right.title.toLowerCase(),
-            ),
-      );
-    }
+    filtered.sort((left, right) => compareMediaItems(left, right, _sortOrder));
     return filtered;
   }
 
@@ -257,8 +251,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!mounted) {
       return;
     }
+    final failedThumbnails =
+        scope.libraryController.cacheProgress?.failedThumbnails ?? 0;
     final message = cached
-        ? '${scope.libraryController.items.length} media files and their best thumbnails are cached.'
+        ? failedThumbnails == 0
+            ? '${scope.libraryController.items.length} media files and their best thumbnails are cached.'
+            : '${scope.libraryController.items.length} media files cached. '
+                '$failedThumbnails unavailable thumbnails were skipped.'
         : 'Channel caching stopped. Review the message above and try again.';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -561,13 +560,13 @@ class _FilterSegment extends StatelessWidget {
 class _LibrarySortRow extends StatelessWidget {
   const _LibrarySortRow({
     required this.visibleCount,
-    required this.sortByTitle,
-    required this.onToggleSort,
+    required this.sortOrder,
+    required this.onChanged,
   });
 
   final int visibleCount;
-  final bool sortByTitle;
-  final VoidCallback onToggleSort;
+  final MediaSortOrder sortOrder;
+  final ValueChanged<MediaSortOrder> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -581,30 +580,34 @@ class _LibrarySortRow extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          Expanded(
-            child: Text(
-              '$visibleCount shown',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
           Text(
-            sortByTitle ? 'A-Z' : 'Newest',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            '$visibleCount shown',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: colors.onSurfaceVariant,
                   fontWeight: FontWeight.w700,
                 ),
           ),
-          const SizedBox(width: 8),
-          IconButton.filledTonal(
-            tooltip: sortByTitle ? 'Sort by newest' : 'Sort by title',
-            onPressed: onToggleSort,
-            icon: Icon(
-              sortByTitle ? Icons.schedule_rounded : Icons.sort_by_alpha_rounded,
+          const SizedBox(width: 10),
+          Expanded(
+            child: SegmentedButton<MediaSortOrder>(
+              key: const ValueKey<String>('library-sort-control'),
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<MediaSortOrder>>[
+                ButtonSegment<MediaSortOrder>(
+                  value: MediaSortOrder.newest,
+                  icon: Icon(Icons.schedule_rounded),
+                  label: Text('Newest'),
+                ),
+                ButtonSegment<MediaSortOrder>(
+                  value: MediaSortOrder.alphabetical,
+                  icon: Icon(Icons.sort_by_alpha_rounded),
+                  label: Text('A-Z'),
+                ),
+              ],
+              selected: <MediaSortOrder>{sortOrder},
+              onSelectionChanged: (selection) => onChanged(selection.first),
             ),
           ),
         ],
