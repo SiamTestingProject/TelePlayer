@@ -66,7 +66,7 @@ class LocalStreamingServer {
         ..set('accept-ranges', 'bytes')
         ..set(HttpHeaders.contentLengthHeader, range.length)
         ..set(HttpHeaders.cacheControlHeader, 'no-store')
-        ..set(HttpHeaders.contentDispositionHeader, 'inline');
+        ..set('content-disposition', 'inline');
       if (rangeWasRequested) {
         request.response.statusCode = HttpStatus.partialContent;
         request.response.headers.set('content-range', range.contentRange);

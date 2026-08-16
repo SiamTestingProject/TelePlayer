@@ -197,7 +197,7 @@ class _PlayerHeader extends StatelessWidget {
                 );
               },
             ),
-          ),
+          );
         },
       ),
     );
