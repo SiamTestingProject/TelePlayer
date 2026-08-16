@@ -157,6 +157,48 @@ void main() {
     expect(telegram.thumbnailAttempts, 1);
   });
 
+  test('full cache replaces previously cached low-resolution artwork', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-artwork-upgrade-test-',
+    );
+    final telegram = _RefreshArtworkTelegramClient();
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    final originalItem = telegram.items.single;
+    await cache.writeArtwork(originalItem, Uint8List.fromList(<int>[1, 1]));
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final items = await repository.cacheAll(
+      const AppSettings(
+        apiId: 1,
+        apiHash: 'test-hash',
+        channelIds: <int>[-1001],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+      onProgress: (_) {},
+    );
+
+    expect(telegram.refreshAttempts, 1);
+    expect(telegram.thumbnailAttempts, 1);
+    expect(
+      await cache.readArtwork(items.single),
+      orderedEquals(<int>[9, 8, 7, 6]),
+    );
+  });
+
   test('excludes Telegram video messages from the cached song library', () async {
     final directory = await Directory.systemTemp.createTemp(
       'teleplayer-audio-only-cache-test-',

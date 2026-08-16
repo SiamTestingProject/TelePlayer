@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -12,12 +11,10 @@ import 'media_artwork.dart';
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({
     required this.onOpenPlayer,
-    required this.onOpenSettings,
     super.key,
   });
 
   final VoidCallback onOpenPlayer;
-  final VoidCallback onOpenSettings;
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -90,29 +87,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               )
                             : const Icon(Icons.download_for_offline_rounded),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        tooltip: 'Settings',
-                        onPressed: widget.onOpenSettings,
-                        icon: const Icon(Icons.settings_rounded),
-                      ),
                     ],
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: _LibraryMixCard(
-                    visibleCount: visibleItems.length,
-                    totalCount: library.items.length,
-                    isLoading: library.isLoading,
-                    onShuffle: visibleItems.isEmpty
-                        ? null
-                        : () => _shuffle(scope, visibleItems),
-                    onRefresh: library.isLoading
-                        ? null
-                        : () => unawaited(library.load()),
                   ),
                 ),
               ),
@@ -216,13 +191,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     widget.onOpenPlayer();
   }
 
-  void _shuffle(AppScope scope, List<MediaItem> items) {
-    if (!scope.playerController.shuffleEnabled) {
-      scope.playerController.toggleShuffle();
-    }
-    _open(scope, items[Random().nextInt(items.length)]);
-  }
-
   Future<void> _cacheAll(AppScope scope) async {
     final cached = await scope.libraryController.cacheAllChannels();
     if (!mounted) {
@@ -286,119 +254,6 @@ class _ChannelCacheBanner extends StatelessWidget {
             value: progress.fraction,
             color: colors.onSecondaryContainer,
             backgroundColor: colors.onSecondaryContainer.withValues(alpha: 0.18),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LibraryMixCard extends StatelessWidget {
-  const _LibraryMixCard({
-    required this.visibleCount,
-    required this.totalCount,
-    required this.isLoading,
-    required this.onShuffle,
-    required this.onRefresh,
-  });
-
-  final int visibleCount;
-  final int totalCount;
-  final bool isLoading;
-  final VoidCallback? onShuffle;
-  final VoidCallback? onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final countLabel = totalCount == visibleCount
-        ? '$totalCount songs'
-        : '$visibleCount of $totalCount songs';
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(36),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            colors.primaryContainer,
-            colors.secondaryContainer.withValues(alpha: 0.88),
-            colors.tertiaryContainer.withValues(alpha: 0.72),
-          ],
-        ),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.28)),
-      ),
-      child: Column(
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Container(
-                width: 76,
-                height: 76,
-                decoration: BoxDecoration(
-                  color: colors.surface.withValues(alpha: 0.54),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Icon(
-                  Icons.album_rounded,
-                  color: colors.primary,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Telegram Mix',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: colors.onPrimaryContainer,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0,
-                          ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      countLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: colors.onPrimaryContainer.withValues(alpha: 0.78),
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: onShuffle,
-                  icon: const Icon(Icons.shuffle_rounded),
-                  label: const Text('Shuffle'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              IconButton.filledTonal(
-                tooltip: 'Refresh',
-                onPressed: onRefresh,
-                icon: isLoading
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded),
-              ),
-            ],
           ),
         ],
       ),

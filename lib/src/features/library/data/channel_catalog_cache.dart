@@ -9,6 +9,8 @@ import '../models/media_item.dart';
 typedef CacheDirectoryProvider = Future<Directory> Function();
 
 class ChannelCatalogCache {
+  static const int _artworkCacheRevision = 2;
+
   ChannelCatalogCache({CacheDirectoryProvider? directoryProvider})
       : _directoryProvider =
             directoryProvider ?? getApplicationSupportDirectory;
@@ -97,7 +99,7 @@ class ChannelCatalogCache {
   Future<File> _thumbnailFile(int fileId) async {
     final directory = await _cacheDirectory();
     final thumbnails = Directory(
-      '${directory.path}${Platform.pathSeparator}thumbnails',
+      '${directory.path}${Platform.pathSeparator}thumbnails-v$_artworkCacheRevision',
     );
     if (!await thumbnails.exists()) {
       await thumbnails.create(recursive: true);
@@ -110,7 +112,7 @@ class ChannelCatalogCache {
   Future<File> _artworkFile(MediaItem item) async {
     final directory = await _cacheDirectory();
     final artwork = Directory(
-      '${directory.path}${Platform.pathSeparator}artwork',
+      '${directory.path}${Platform.pathSeparator}artwork-v$_artworkCacheRevision',
     );
     if (!await artwork.exists()) {
       await artwork.create(recursive: true);

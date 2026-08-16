@@ -124,6 +124,7 @@ class AppHome extends StatefulWidget {
 
 class _AppHomeState extends State<AppHome> {
   int _index = 0;
+  final List<int> _navigationHistory = <int>[0];
   bool _scheduledUpdateCheck = false;
 
   @override
@@ -153,108 +154,138 @@ class _AppHomeState extends State<AppHome> {
     );
   }
 
+  void _navigateTo(int index) {
+    if (index == _index) {
+      return;
+    }
+    setState(() {
+      _navigationHistory.add(index);
+      _index = index;
+    });
+  }
+
+  void _navigateBack() {
+    if (_navigationHistory.length <= 1) {
+      return;
+    }
+    setState(() {
+      _navigationHistory.removeLast();
+      _index = _navigationHistory.last;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
-    return AnimatedBuilder(
-      animation: Listenable.merge([
-        scope.authController,
-        scope.libraryController,
-        scope.playerController,
-        scope.settingsController,
-      ]),
-      builder: (context, _) {
-        final authReady = scope.authController.step.kind == AuthStepKind.ready;
-        final child = switch (_index) {
-          0 => authReady
-              ? LibraryScreen(
-                  onOpenPlayer: () => setState(() => _index = 1),
-                  onOpenSettings: () => setState(() => _index = 2),
-                )
-              : AuthScreen(onOpenSettings: () => setState(() => _index = 2)),
-          1 => authReady
-              ? PlayerScreen(onClose: () => setState(() => _index = 0))
-              : AuthScreen(onOpenSettings: () => setState(() => _index = 2)),
-          _ => SettingsScreen(onSaved: () => unawaited(scope.authController.initialize())),
-        };
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 760;
-            if (wide) {
+    return PopScope<Object?>(
+      canPop: _navigationHistory.length <= 1,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          _navigateBack();
+        }
+      },
+      child: AnimatedBuilder(
+        animation: Listenable.merge([
+          scope.authController,
+          scope.libraryController,
+          scope.playerController,
+          scope.settingsController,
+        ]),
+        builder: (context, _) {
+          final authReady =
+              scope.authController.step.kind == AuthStepKind.ready;
+          final child = switch (_index) {
+            0 => authReady
+                ? LibraryScreen(onOpenPlayer: () => _navigateTo(1))
+                : AuthScreen(onOpenSettings: () => _navigateTo(2)),
+            1 => authReady
+                ? PlayerScreen(onClose: _navigateBack)
+                : AuthScreen(onOpenSettings: () => _navigateTo(2)),
+            _ => SettingsScreen(
+                onSaved: () =>
+                    unawaited(scope.authController.initialize()),
+              ),
+          };
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 760;
+              if (wide) {
+                return Scaffold(
+                  body: Row(
+                    children: [
+                      NavigationRail(
+                        selectedIndex: _index,
+                        onDestinationSelected: _navigateTo,
+                        labelType: NavigationRailLabelType.all,
+                        destinations: const [
+                          NavigationRailDestination(
+                            icon: Icon(Icons.library_music_outlined),
+                            selectedIcon: Icon(Icons.library_music_rounded),
+                            label: Text('Library'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.play_circle_outline_rounded),
+                            selectedIcon: Icon(Icons.play_circle_rounded),
+                            label: Text('Player'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.settings_outlined),
+                            selectedIcon: Icon(Icons.settings),
+                            label: Text('Settings'),
+                          ),
+                        ],
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(child: child),
+                    ],
+                  ),
+                );
+              }
+              if (authReady && _index == 1) {
+                return child;
+              }
               return Scaffold(
-                body: Row(
-                  children: [
-                    NavigationRail(
+                body: child,
+                bottomNavigationBar: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (authReady &&
+                        scope.playerController.item != null &&
+                        _index != 1)
+                      _MiniPlayer(
+                        onOpenPlayer: () => _navigateTo(1),
+                      ),
+                    NavigationBar(
                       selectedIndex: _index,
-                      onDestinationSelected: (value) => setState(() => _index = value),
-                      labelType: NavigationRailLabelType.all,
+                      onDestinationSelected: _navigateTo,
                       destinations: const [
-                        NavigationRailDestination(
+                        NavigationDestination(
                           icon: Icon(Icons.library_music_outlined),
                           selectedIcon: Icon(Icons.library_music_rounded),
-                          label: Text('Library'),
+                          label: 'Library',
                         ),
-                        NavigationRailDestination(
+                        NavigationDestination(
                           icon: Icon(Icons.play_circle_outline_rounded),
                           selectedIcon: Icon(Icons.play_circle_rounded),
-                          label: Text('Player'),
+                          label: 'Player',
                         ),
-                        NavigationRailDestination(
+                        NavigationDestination(
                           icon: Icon(Icons.settings_outlined),
-                          selectedIcon: Icon(Icons.settings),
-                          label: Text('Settings'),
+                          selectedIcon: Icon(Icons.settings_rounded),
+                          label: 'Settings',
                         ),
                       ],
                     ),
-                    const VerticalDivider(width: 1),
-                    Expanded(child: child),
                   ],
                 ),
               );
-            }
-            if (authReady && _index == 1) {
-              return child;
-            }
-            return Scaffold(
-              body: child,
-              bottomNavigationBar: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  if (authReady &&
-                      scope.playerController.item != null &&
-                      _index != 1)
-                    _MiniPlayer(
-                      onOpenPlayer: () => setState(() => _index = 1),
-                    ),
-                  NavigationBar(
-                    selectedIndex: _index,
-                    onDestinationSelected: (value) => setState(() => _index = value),
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.library_music_outlined),
-                        selectedIcon: Icon(Icons.library_music_rounded),
-                        label: 'Library',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.play_circle_outline_rounded),
-                        selectedIcon: Icon(Icons.play_circle_rounded),
-                        label: 'Player',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.settings_outlined),
-                        selectedIcon: Icon(Icons.settings_rounded),
-                        label: 'Settings',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+            },
+          );
+        },
+      ),
     );
   }
+
 }
 
 class _MiniPlayer extends StatelessWidget {

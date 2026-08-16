@@ -234,6 +234,16 @@ void main() {
                           'size': 48000,
                         },
                       },
+                      'external_album_covers': <Object?>[
+                        <String, dynamic>{
+                          'width': 1280,
+                          'height': 1280,
+                          'file': <String, dynamic>{
+                            'id': 99,
+                            'size': 160000,
+                          },
+                        },
+                      ],
                       'audio': <String, dynamic>{
                         '@type': 'file',
                         'id': 77,
@@ -270,8 +280,58 @@ void main() {
     expect(items.single.artist, 'Example Artist');
     expect(items.single.fileId, 77);
     expect(items.single.size, 32600000);
-    expect(items.single.thumbnailFileId, 88);
+    expect(items.single.thumbnailFileId, 99);
     expect(items.single.inlineThumbnailBase64, 'AQIDBA==');
+  });
+
+  test('prefetches the complete audio file after the first playback range', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-range-prefetch-test-',
+    );
+    final mediaFile = File('${directory.path}/track.mp3');
+    await mediaFile.writeAsBytes(<int>[10, 20, 30, 40, 50, 60, 70, 80]);
+    final gateway = _FakeTdlibGateway(
+      requestHandler: (request) {
+        if (request.getConstructor() == 'downloadFile') {
+          return <String, dynamic>{
+            '@type': 'file',
+            'id': 77,
+            'size': 8,
+            'local': <String, dynamic>{
+              'path': mediaFile.path,
+            },
+          };
+        }
+        return <String, dynamic>{'@type': 'ok'};
+      },
+    );
+    final client = TdlibTelegramClient(gateway);
+    addTearDown(() async {
+      await client.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    const item = MediaItem(
+      id: '-1001:70:77',
+      chatId: -1001,
+      messageId: 70,
+      fileId: 77,
+      title: 'Background Track',
+      fileName: 'track.mp3',
+      mimeType: 'audio/mpeg',
+      size: 8,
+      kind: MediaKind.audio,
+    );
+    final bytes = await client.readFileRange(item, 0, 3);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(bytes, orderedEquals(<int>[10, 20, 30, 40]));
+    expect(
+      gateway.requestTypes.where((type) => type == 'downloadFile').length,
+      2,
+    );
   });
 
   test('full media scan paginates through the complete channel history', () async {

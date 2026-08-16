@@ -183,85 +183,93 @@ class MediaRepository {
   }) async {
     // Item-keyed artwork survives cases where TDLib rotates a thumbnail file
     // ID or where the original history item had no thumbnail ID at all.
+    // During a full cache pass, however, do not let an old minithumbnail-sized
+    // artwork file permanently win. Refresh the Telegram message and try the
+    // best remote album-cover variant again so existing installations can
+    // upgrade low-resolution artwork in place.
     final cachedArtwork = await _catalogCache.readArtwork(item);
-    if (cachedArtwork != null) {
+    if (!retryRemote && cachedArtwork != null) {
       return cachedArtwork;
     }
 
-    final originalThumbnailId = item.thumbnailFileId;
-    if (originalThumbnailId != null) {
-      final cached = await _catalogCache.readThumbnail(originalThumbnailId);
-      if (cached != null) {
-        await _catalogCache.writeArtwork(item, cached);
-        return cached;
-      }
-    }
-
     var inlineFallback = _decodeInlineThumbnail(item);
-    if (!retryRemote && originalThumbnailId == null) {
-      return inlineFallback;
-    }
-    if (!retryRemote && inlineFallback != null) {
-      return inlineFallback;
-    }
-
     var currentItem = item;
     var refreshedOnce = false;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      if (currentItem.thumbnailFileId == null && !refreshedOnce) {
-        try {
-          currentItem = await _telegramClient.refreshMedia(item);
-          refreshedOnce = true;
-          final refreshedInline = _decodeInlineThumbnail(currentItem);
-          if (refreshedInline != null && refreshedInline.isNotEmpty) {
-            inlineFallback = refreshedInline;
-          }
-        } on AppException catch (error) {
-          refreshedOnce = true;
-          if (!_isRecoverableThumbnailFailure(error)) {
-            rethrow;
-          }
+
+    Future<void> refreshCurrentItem() async {
+      if (refreshedOnce) {
+        return;
+      }
+      try {
+        currentItem = await _telegramClient.refreshMedia(item);
+        final refreshedInline = _decodeInlineThumbnail(currentItem);
+        if (refreshedInline != null && refreshedInline.isNotEmpty) {
+          inlineFallback = refreshedInline;
         }
+      } on AppException catch (error) {
+        if (!_isRecoverableThumbnailFailure(error)) {
+          rethrow;
+        }
+      } finally {
+        refreshedOnce = true;
+      }
+    }
+
+    Future<Uint8List?> tryRemoteArtwork() async {
+      final thumbnailId = currentItem.thumbnailFileId;
+      if (thumbnailId == null) {
+        return null;
       }
 
-      final currentThumbnailId = currentItem.thumbnailFileId;
-      if (currentThumbnailId != null) {
-        final cached = await _catalogCache.readThumbnail(currentThumbnailId);
-        if (cached != null) {
-          await _catalogCache.writeArtwork(item, cached);
-          return cached;
-        }
-        try {
-          final downloaded = await _telegramClient.loadThumbnail(currentItem);
-          if (downloaded != null && downloaded.isNotEmpty) {
-            await _catalogCache.writeThumbnail(currentThumbnailId, downloaded);
-            if (originalThumbnailId != null &&
-                originalThumbnailId != currentThumbnailId) {
-              await _catalogCache.writeThumbnail(originalThumbnailId, downloaded);
-            }
-            await _catalogCache.writeArtwork(item, downloaded);
-            return downloaded;
+      final cachedThumbnail = await _catalogCache.readThumbnail(thumbnailId);
+      if (!retryRemote && cachedThumbnail != null) {
+        await _catalogCache.writeArtwork(item, cachedThumbnail);
+        return cachedThumbnail;
+      }
+
+      try {
+        final downloaded = await _telegramClient.loadThumbnail(currentItem);
+        if (downloaded == null || downloaded.isEmpty) {
+          if (cachedThumbnail != null && cachedThumbnail.isNotEmpty) {
+            await _catalogCache.writeArtwork(item, cachedThumbnail);
+            return cachedThumbnail;
           }
-        } on AppException catch (error) {
-          if (!_isRecoverableThumbnailFailure(error)) {
-            rethrow;
-          }
+          return null;
         }
+        await _catalogCache.writeThumbnail(thumbnailId, downloaded);
+        await _catalogCache.writeArtwork(item, downloaded);
+        return downloaded;
+      } on AppException catch (error) {
+        if (!_isRecoverableThumbnailFailure(error)) {
+          rethrow;
+        }
+        if (cachedThumbnail != null && cachedThumbnail.isNotEmpty) {
+          await _catalogCache.writeArtwork(item, cachedThumbnail);
+          return cachedThumbnail;
+        }
+        return null;
+      }
+    }
+
+    // The history response can contain only a tiny inline preview. A direct
+    // GetMessage refresh often exposes album_cover_thumbnail or a larger
+    // external_album_covers entry. Force that refresh when the user runs the
+    // full cache operation, even if an older item-keyed artwork file exists.
+    if (retryRemote) {
+      await refreshCurrentItem();
+    }
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final remote = await tryRemoteArtwork();
+      if (remote != null && remote.isNotEmpty) {
+        return remote;
       }
 
       if (!refreshedOnce) {
-        try {
-          currentItem = await _telegramClient.refreshMedia(item);
-          refreshedOnce = true;
-          final refreshedInline = _decodeInlineThumbnail(currentItem);
-          if (refreshedInline != null && refreshedInline.isNotEmpty) {
-            inlineFallback = refreshedInline;
-          }
-        } on AppException catch (error) {
-          refreshedOnce = true;
-          if (!_isRecoverableThumbnailFailure(error)) {
-            rethrow;
-          }
+        await refreshCurrentItem();
+        final refreshedRemote = await tryRemoteArtwork();
+        if (refreshedRemote != null && refreshedRemote.isNotEmpty) {
+          return refreshedRemote;
         }
       }
 
@@ -275,8 +283,12 @@ class MediaRepository {
       }
     }
 
-    if (inlineFallback != null && inlineFallback.isNotEmpty) {
-      await _catalogCache.writeArtwork(item, inlineFallback);
+    // Preserve a previously cached full image when Telegram is temporarily
+    // unavailable. Inline minithumbnails are intentionally not persisted as
+    // item artwork because doing so made a 40px preview look like the final
+    // album cover on later launches.
+    if (cachedArtwork != null && cachedArtwork.isNotEmpty) {
+      return cachedArtwork;
     }
     return inlineFallback;
   }

@@ -12,6 +12,9 @@ import '../../library/models/media_item.dart';
 class PlayerController extends ChangeNotifier {
   PlayerController(this._libraryController);
 
+  static const int _maxRecoveryAttempts = 6;
+  static const Duration _bufferingWatchdogDelay = Duration(seconds: 18);
+
   final MediaLibraryController _libraryController;
   final Set<String> _favoriteIds = <String>{};
   final Random _random = Random();
@@ -30,6 +33,7 @@ class PlayerController extends ChangeNotifier {
   int _recoveryAttempts = 0;
   int _openGeneration = 0;
   Duration _recoveryBaseline = Duration.zero;
+  Timer? _bufferingWatchdog;
 
   MediaItem? get item => _item;
   Object? get error => _error;
@@ -65,6 +69,7 @@ class PlayerController extends ChangeNotifier {
     }
     _recoveryAttempts = 0;
     _recoveryBaseline = Duration.zero;
+    _cancelBufferingWatchdog();
     return _open(item);
   }
 
@@ -73,6 +78,7 @@ class PlayerController extends ChangeNotifier {
     Duration resumeAt = Duration.zero,
   }) async {
     final generation = ++_openGeneration;
+    _cancelBufferingWatchdog();
     _isOpening = true;
     _error = null;
     _item = item;
@@ -156,7 +162,7 @@ class PlayerController extends ChangeNotifier {
       // Loading another song intentionally interrupts the previous play call.
     } catch (error) {
       if (generation == _openGeneration && !_disposed) {
-        _setPlaybackError(error);
+        _recoverPlayback(error);
       }
     }
   }
@@ -242,7 +248,19 @@ class PlayerController extends ChangeNotifier {
     if (existing != null) {
       return existing;
     }
-    final player = audio.AudioPlayer(useLazyPreparation: false);
+    final player = audio.AudioPlayer(
+      useLazyPreparation: false,
+      audioLoadConfiguration: const audio.AudioLoadConfiguration(
+        androidLoadControl: audio.AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 60),
+          maxBufferDuration: Duration(minutes: 2),
+          bufferForPlaybackDuration: Duration(seconds: 2),
+          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 8),
+          prioritizeTimeOverSizeThresholds: true,
+          backBufferDuration: Duration(seconds: 20),
+        ),
+      ),
+    );
     _audioPlayer = player;
     _playerSubscriptions
       ..add(player.playerStateStream.listen(_handlePlayerState))
@@ -277,6 +295,15 @@ class PlayerController extends ChangeNotifier {
 
   void _handlePlayerState(audio.PlayerState state) {
     _notify();
+    final stalled = state.playing &&
+        (state.processingState == audio.ProcessingState.loading ||
+            state.processingState == audio.ProcessingState.buffering);
+    if (stalled) {
+      _armBufferingWatchdog();
+    } else {
+      _cancelBufferingWatchdog();
+    }
+
     if (state.processingState == audio.ProcessingState.completed &&
         !_repeatEnabled &&
         !_isAdvancing) {
@@ -299,30 +326,97 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _handlePlayerError(audio.PlayerException error) {
+    _recoverPlayback(error);
+  }
+
+  void _armBufferingWatchdog() {
+    if (_bufferingWatchdog != null || _disposed || _isRecovering) {
+      return;
+    }
+    final generation = _openGeneration;
+    _bufferingWatchdog = Timer(_bufferingWatchdogDelay, () {
+      _bufferingWatchdog = null;
+      final player = _audioPlayer;
+      if (_disposed ||
+          _isRecovering ||
+          generation != _openGeneration ||
+          player == null ||
+          !player.playing) {
+        return;
+      }
+      final stillStalled =
+          player.processingState == audio.ProcessingState.loading ||
+              player.processingState == audio.ProcessingState.buffering;
+      if (!stillStalled) {
+        return;
+      }
+      _recoverPlayback(
+        const AppException(
+          AppErrorCode.networkInterrupted,
+          message: 'Telegram playback remained buffered for too long.',
+        ),
+      );
+    });
+  }
+
+  void _cancelBufferingWatchdog() {
+    _bufferingWatchdog?.cancel();
+    _bufferingWatchdog = null;
+  }
+
+  void _recoverPlayback(Object error) {
     if (_disposed || _isRecovering) {
       return;
     }
+    _cancelBufferingWatchdog();
     final currentItem = _item;
-    if (currentItem != null && _recoveryAttempts < 3) {
-      final resumeAt = position;
-      final delay = Duration(milliseconds: 500 * (1 << _recoveryAttempts));
-      _recoveryAttempts += 1;
-      _isRecovering = true;
-      _isOpening = true;
-      _notify();
-      unawaited(
-        Future<void>.delayed(delay)
-            .then((_) => _open(currentItem, resumeAt: resumeAt))
-            .whenComplete(() {
-          _isRecovering = false;
-        }),
-      );
+    if (currentItem == null || _recoveryAttempts >= _maxRecoveryAttempts) {
+      _setPlaybackError(error);
       return;
     }
-    _setPlaybackError(error);
+
+    final resumeAt = position;
+    final exponent = _recoveryAttempts.clamp(0, 4).toInt();
+    final delay = Duration(milliseconds: 500 * (1 << exponent));
+    final expectedItemId = currentItem.id;
+    _recoveryAttempts += 1;
+    _isRecovering = true;
+    _isOpening = true;
+    _notify();
+    Object? recoveryFailure;
+    unawaited(
+      Future<void>.delayed(delay)
+          .then((_) async {
+            if (_disposed || _item?.id != expectedItemId) {
+              return;
+            }
+            await _open(currentItem, resumeAt: resumeAt);
+            if (!_disposed && _item?.id == expectedItemId) {
+              recoveryFailure = _error;
+            }
+          })
+          .whenComplete(() {
+            _isRecovering = false;
+            if (!_disposed &&
+                _item?.id == expectedItemId &&
+                recoveryFailure != null) {
+              _recoverPlayback(recoveryFailure!);
+              return;
+            }
+            final player = _audioPlayer;
+            if (!_disposed &&
+                player != null &&
+                player.playing &&
+                (player.processingState == audio.ProcessingState.loading ||
+                    player.processingState == audio.ProcessingState.buffering)) {
+              _armBufferingWatchdog();
+            }
+          }),
+    );
   }
 
   void _setPlaybackError(Object error) {
+    _cancelBufferingWatchdog();
     _isOpening = false;
     _error = AppException(
       AppErrorCode.networkInterrupted,
@@ -342,6 +436,7 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _cancelBufferingWatchdog();
     _openGeneration += 1;
     for (final subscription in _playerSubscriptions) {
       unawaited(subscription.cancel());

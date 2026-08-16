@@ -28,6 +28,7 @@ class TdlibTelegramClient implements TelegramClient {
   final _authSteps = StreamController<AuthStep>.broadcast();
   final _errors = StreamController<AppException>.broadcast();
   final _fileDownloadQueues = <int, Completer<void>>{};
+  final _fullDownloadRequests = <int>{};
 
   AppSettings? _settings;
   StreamSubscription<Map<String, dynamic>>? _updatesSub;
@@ -347,11 +348,43 @@ class TdlibTelegramClient implements TelegramClient {
             message: 'Telegram did not finish preparing the requested media range.',
           );
         }
+        // Once playback has proven that this file is valid, ask TDLib to keep
+        // downloading the remainder in its native file manager. This lets the
+        // player transition from range-by-range network reads to local disk as
+        // the track progresses, which is substantially more reliable while
+        // Android is backgrounded or the network briefly enters Doze.
+        _requestFullFileDownload(fileId);
         return result;
       } finally {
         await handle.close();
       }
     });
+  }
+
+  void _requestFullFileDownload(int fileId) {
+    if (!_fullDownloadRequests.add(fileId)) {
+      return;
+    }
+    unawaited(_downloadFullFileInBackground(fileId));
+  }
+
+  Future<void> _downloadFullFileInBackground(int fileId) async {
+    try {
+      await _gateway.send(
+        td.DownloadFile(
+          fileId: fileId,
+          priority: 24,
+          offset: 0,
+          limit: 0,
+          synchronous: false,
+        ),
+        timeout: const Duration(seconds: 30),
+      );
+    } catch (_) {
+      // Allow a later range read to retry the full prefetch. Playback itself
+      // continues to use the synchronous high-priority range request.
+      _fullDownloadRequests.remove(fileId);
+    }
   }
 
   Future<T> _withFileDownloadLock<T>(
@@ -526,7 +559,7 @@ class TdlibTelegramClient implements TelegramClient {
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.3.1',
+        applicationVersion: '1.3.4',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -791,6 +824,7 @@ class TdlibTelegramClient implements TelegramClient {
 
   @override
   Future<void> close() async {
+    _fullDownloadRequests.clear();
     await _updatesSub?.cancel();
     await _authSteps.close();
     await _errors.close();

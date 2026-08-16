@@ -31,6 +31,7 @@ class MediaArtwork extends StatelessWidget {
             return Image.memory(
               bytes,
               fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => _ArtworkFallback(
                 iconSize: iconSize,
