@@ -50,7 +50,7 @@ class ErrorMessageMapper {
         );
       case AppErrorCode.deletedMedia:
         return const FriendlyError(
-          title: 'Song was deleted',
+          title: 'Media was deleted',
           body: 'The audio file attached to this message is no longer available.',
         );
       case AppErrorCode.privateChannel:
