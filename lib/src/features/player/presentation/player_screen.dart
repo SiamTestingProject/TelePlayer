@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart' show TickerCanceled;
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';

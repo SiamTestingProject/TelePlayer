@@ -24,6 +24,13 @@ class AnalyzerCleanupTest(unittest.TestCase):
             source,
         )
 
+    def test_player_screen_does_not_import_scheduler_directly(self):
+        source = (
+            ROOT / "lib/src/features/player/presentation/player_screen.dart"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("package:flutter/scheduler.dart", source)
+        self.assertIn("on TickerCanceled", source)
+
     def test_settings_screen_has_no_unused_settings_local(self):
         source = (
             ROOT / "lib/src/features/settings/presentation/settings_screen.dart"

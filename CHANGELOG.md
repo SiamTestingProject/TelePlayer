@@ -1,4 +1,13 @@
+## [1.4.24] - 2026-08-17
+
+- Fixed `flutter analyze --fatal-infos` by removing the redundant direct `flutter/scheduler.dart` import from the Now Playing screen.
+- Added a regression test so the unnecessary scheduler import cannot return.
+
 # Changelog
+
+## [1.4.23] - 2026-08-17
+
+- Removed a redundant Flutter scheduler import so `flutter analyze --fatal-infos` passes cleanly.
 
 ## [1.4.22] - 2026-08-17
 

@@ -2,7 +2,7 @@
 #define MyAppExeName "teleplayer.exe"
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.4.22"
+  #define MyAppVersion "1.4.24"
 #endif
 #ifndef MySourceDir
   #define MySourceDir "..\..\build\windows\x64\runner\Release"
