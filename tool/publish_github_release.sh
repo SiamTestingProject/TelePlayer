@@ -9,9 +9,9 @@ set -euo pipefail
 : "${RELEASE_NAME:?RELEASE_NAME is required}"
 : "${RELEASE_PRERELEASE:?RELEASE_PRERELEASE is required}"
 
-max_attempts="${RELEASE_MAX_ATTEMPTS:-7}"
-retry_delay="${RELEASE_INITIAL_RETRY_DELAY:-15}"
-max_retry_delay="${RELEASE_MAX_RETRY_DELAY:-120}"
+max_attempts="${RELEASE_MAX_ATTEMPTS:-4}"
+retry_delay="${RELEASE_INITIAL_RETRY_DELAY:-5}"
+max_retry_delay="${RELEASE_MAX_RETRY_DELAY:-20}"
 
 if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
   echo "::error::RELEASE_MAX_ATTEMPTS must be a positive integer."
@@ -95,7 +95,7 @@ if ((${#release_assets[@]} == 0)); then
   exit 1
 fi
 
-retry_delay="${RELEASE_INITIAL_RETRY_DELAY:-15}"
+retry_delay="${RELEASE_INITIAL_RETRY_DELAY:-5}"
 assets_uploaded=false
 for ((attempt = 1; attempt <= max_attempts; attempt++)); do
   echo "Release asset upload attempt $attempt of $max_attempts"
