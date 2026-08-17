@@ -159,18 +159,18 @@ class PlayerController extends ChangeNotifier {
         final canAppendForContinuousSwitch =
             _activePlaybackItem != null &&
             _activePlaybackItem!.messageKey != item.messageKey &&
-            (player.sequence?.isNotEmpty ?? false);
+            player.sequence.isNotEmpty;
         if (canAppendForContinuousSwitch) {
           // just_audio's playlist keeps the current source alive while the new
           // source is appended/prepared. Seeking to that prepared entry avoids
           // the explicit stop -> load -> play gap that mini-player swipes used
           // to trigger. Remove the obsolete entries only after takeover.
-          final targetIndex = player.sequence!.length;
+          final targetIndex = player.sequence.length;
           await player
               .addAudioSource(source)
               .timeout(const Duration(seconds: 30));
           if (generation != _openGeneration || _disposed) {
-            if ((player.sequence?.length ?? 0) > targetIndex) {
+            if (player.sequence.length > targetIndex) {
               await player.removeAudioSourceAt(targetIndex);
             }
             if (!_disposed &&
@@ -428,7 +428,7 @@ class PlayerController extends ChangeNotifier {
         // file:// source. Append and prepare that source while the stream keeps
         // playing, then seek across at the latest position. This avoids another
         // stop/load gap during the background-reliability handoff.
-        final sequenceLength = player.sequence?.length ?? 0;
+        final sequenceLength = player.sequence.length;
         if (sequenceLength > 0) {
           await player
               .addAudioSource(audio.AudioSource.uri(directUri))
@@ -436,7 +436,7 @@ class PlayerController extends ChangeNotifier {
           if (_disposed ||
               generation != _openGeneration ||
               _item?.messageKey != item.messageKey) {
-            if ((player.sequence?.length ?? 0) > sequenceLength) {
+            if (player.sequence.length > sequenceLength) {
               await player.removeAudioSourceAt(sequenceLength);
             }
             return;
@@ -661,7 +661,7 @@ class PlayerController extends ChangeNotifier {
     unawaited(
       request.then<void>(
         (_) {},
-        onError: (Object _, StackTrace __) {
+        onError: (Object _, StackTrace _) {
           if (identical(_preparedStreamUris[key], request)) {
             _preparedStreamUris.remove(key);
           }
@@ -892,7 +892,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _clearPlaybackCache(MediaItem item) async {
-    _preparedStreamUris.remove(item.messageKey);
+    _preparedStreamUris.remove(item.messageKey)?.ignore();
     try {
       await _libraryController.clearPlaybackCache(item);
     } catch (_) {

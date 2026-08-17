@@ -15,6 +15,11 @@ class PlayerSwitchAndArtworkRecoveryTest(unittest.TestCase):
         self.assertIn("_activePlaybackItem", source)
         self.assertIn("interruptedPrevious", source)
         self.assertIn("unawaited(_clearPlaybackCache(item));", source)
+        self.assertNotIn("player.sequence?.", source)
+        self.assertNotIn("player.sequence!", source)
+        self.assertIn(
+            "_preparedStreamUris.remove(item.messageKey)?.ignore();", source
+        )
 
     def test_mini_player_swipes_keep_audio_handoff_and_animation_independent(self):
         source = (ROOT / "lib/src/app/app.dart").read_text(encoding="utf-8")

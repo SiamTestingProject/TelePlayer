@@ -6,6 +6,8 @@
 - Isolated horizontal and vertical animation ticks from album artwork/control rebuilds and made snap-back animations interruptible, improving repeated and rapid swipe smoothness.
 - Reduced Android's excessive initial/rebuffer thresholds, starts native whole-file preparation after the urgent startup range is ready, and only invokes buffering recovery when neither playback nor buffered data has progressed for a full watchdog window.
 - Increased localhost streaming chunks to reduce native/Dart request overhead while preserving prompt incremental flushes and the existing replaced/completed temporary-song cleanup.
+- Cleared all `flutter analyze --fatal-infos` diagnostics in the continuous playlist and prepared-stream cleanup paths for the current non-null just_audio sequence API.
+- Raised the build number to 51 so the analyzer-corrected source cannot be confused with the earlier build 50 archive.
 
 ## [1.4.30] - 2026-08-17
 
