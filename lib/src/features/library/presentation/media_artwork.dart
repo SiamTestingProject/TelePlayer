@@ -45,7 +45,7 @@ class MediaArtwork extends StatelessWidget {
               ),
               fit: BoxFit.cover,
               filterQuality: FilterQuality.high,
-              gaplessPlayback: false,
+              gaplessPlayback: true,
               errorBuilder: (_, _, _) => _ArtworkFallback(
                 iconSize: iconSize,
               ),

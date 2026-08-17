@@ -182,7 +182,7 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 / 'android/app/src/main/res/drawable/ic_launcher_background.xml'
             )
             self.assertTrue(adaptive_background.is_file())
-            self.assertIn('#FFF8F9FA', adaptive_background.read_text())
+            self.assertIn('#FF000000', adaptive_background.read_text())
             for density in (
                 'drawable-mdpi',
                 'drawable-hdpi',

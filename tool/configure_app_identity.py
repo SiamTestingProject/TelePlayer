@@ -199,7 +199,7 @@ class MainActivity : AudioServiceActivity() {{
 ANDROID_NOTIFICATION_ICON_NAME = "ic_stat_teleplayer"
 ANDROID_ADAPTIVE_ICON_BACKGROUND_XML = """<shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#FFF8F9FA" />
+    <solid android:color="#FF000000" />
 </shape>
 """
 ANDROID_ADAPTIVE_ICON_XML = """<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">

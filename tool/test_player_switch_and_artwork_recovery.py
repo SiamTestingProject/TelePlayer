@@ -30,6 +30,8 @@ class PlayerSwitchAndArtworkRecoveryTest(unittest.TestCase):
         self.assertIn("player-art-${item.messageKey}", source)
         self.assertIn("left: _travel + _dragOffset", source)
         self.assertIn("left: -_travel + _dragOffset", source)
+        self.assertIn("_transitionItem?.messageKey == widget.item.messageKey", source)
+        self.assertIn("_animateExternalSwitch(targetKey, direction)", source)
 
     def test_resolved_artwork_is_available_synchronously_for_track_switches(self):
         controller = (ROOT / "lib/src/features/library/application/media_library_controller.dart").read_text(encoding="utf-8")
@@ -37,7 +39,7 @@ class PlayerSwitchAndArtworkRecoveryTest(unittest.TestCase):
         self.assertIn("_resolvedThumbnails", controller)
         self.assertIn("cachedThumbnailFor", controller)
         self.assertIn("initialData: libraryController.cachedThumbnailFor", artwork)
-        self.assertIn("gaplessPlayback: false", artwork)
+        self.assertIn("gaplessPlayback: true", artwork)
 
 
 if __name__ == "__main__":

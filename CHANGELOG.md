@@ -1,3 +1,10 @@
+## [1.4.30] - 2026-08-17
+
+- Completely replaced the previous TelePlayer branding with the newly supplied black-background white/blue music-note logo across the Flutter UI, Android launcher/adaptive/round icons, Windows executable, and installer.
+- Changed the Android adaptive-icon background to black and rebuilt all density assets so launchers, App Info, and Recent Apps use the new logo consistently.
+- Fixed Previous/Next artwork transitions restarting on every PlayerController loading/buffering notification. Repeated rebuilds for the same target song are now ignored, preventing the cover from violently moving forward and snapping back.
+- Prefetches the selected target cover before external track-switch animation and keeps the already-loaded cover visible while a higher-quality version resolves, reducing missing-cover flashes.
+
 ## [1.4.29] - 2026-08-17
 
 - Fixed the Android playback crash `Invalid notification (no valid small icon)` by explicitly preserving TelePlayer's custom media notification icon from release resource shrinking.

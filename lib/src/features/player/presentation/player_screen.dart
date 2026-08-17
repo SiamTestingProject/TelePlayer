@@ -614,19 +614,43 @@ class _ArtworkCarouselState extends State<_ArtworkCarousel>
       return;
     }
 
+    // PlayerController notifies several times while a new source is opening
+    // (loading, buffering, metadata, playback state). Those rebuilds can carry
+    // the same new MediaItem. Never restart the artwork animation for the same
+    // target: repeatedly resetting the controller made the cover shoot forward
+    // and snap back when Previous/Next was pressed.
+    if (_transitionItem?.messageKey == widget.item.messageKey) {
+      return;
+    }
+
+    // A genuinely newer external selection supersedes an older unfinished
+    // transition. Reset once, then animate only the latest requested cover.
+    if (_transitionItem != null || _settleController.isAnimating) {
+      _animationGeneration++;
+      _settleController.stop();
+      _offsetAnimation = null;
+      _dragOffset = 0;
+      _transitionItem = null;
+    }
+
     // Previous/next buttons and queue selection update PlayerController before
     // this widget is rebuilt. Keep the old artwork on screen and carousel it
     // toward the new one rather than replacing it abruptly.
     final direction = widget.item.messageKey == _displayedPrevious?.messageKey
         ? 1.0
         : -1.0;
+    final targetKey = widget.item.messageKey;
     _transitionItem = widget.item;
     _transitionDirection = direction;
+    unawaited(_prefetchArtwork(widget.item));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.item.messageKey == _displayedItem.messageKey) {
+      if (!mounted ||
+          widget.item.messageKey != targetKey ||
+          _displayedItem.messageKey == targetKey ||
+          _transitionItem?.messageKey != targetKey) {
         return;
       }
-      unawaited(_animateExternalSwitch(direction));
+      unawaited(_animateExternalSwitch(targetKey, direction));
     });
   }
 
@@ -703,15 +727,21 @@ class _ArtworkCarouselState extends State<_ArtworkCarousel>
     unawaited(AppScope.of(context).playerController.open(target));
   }
 
-  Future<void> _animateExternalSwitch(double direction) async {
+  Future<void> _animateExternalSwitch(
+    String targetKey,
+    double direction,
+  ) async {
     final target = _transitionItem;
-    if (target == null) {
+    if (target == null || target.messageKey != targetKey) {
       return;
     }
     final generation = ++_animationGeneration;
     final destination = direction < 0 ? -_travel : _travel;
     await _animateOffset(0, destination);
-    if (!mounted || generation != _animationGeneration) {
+    if (!mounted ||
+        generation != _animationGeneration ||
+        widget.item.messageKey != targetKey ||
+        _transitionItem?.messageKey != targetKey) {
       return;
     }
     setState(() {
