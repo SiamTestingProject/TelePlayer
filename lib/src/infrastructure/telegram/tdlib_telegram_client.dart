@@ -687,7 +687,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.4.1',
+        applicationVersion: '1.4.8',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -699,7 +699,7 @@ class TdlibTelegramClient
       return 'Windows PC';
     }
     if (io.Platform.isAndroid) {
-      return 'Flutter Android';
+      return 'TelePlayer';
     }
     return 'Flutter ${io.Platform.operatingSystem}';
   }
