@@ -9,9 +9,31 @@ class PlayerSwitchAndArtworkRecoveryTest(unittest.TestCase):
         source = (ROOT / "lib/src/features/player/application/player_controller.dart").read_text(encoding="utf-8")
         self.assertIn("_playerMutationTail", source)
         self.assertIn("_withPlayerMutation", source)
-        self.assertIn("final directUri = await _libraryController.prepareDirectPlaybackUri(item);", source)
+        self.assertIn("final directUriFuture =", source)
+        self.assertIn("_libraryController.prepareDirectPlaybackUri(item);", source)
         self.assertIn("Direct-file preparation is optional", source)
         self.assertIn("_activePlaybackItem", source)
+        self.assertIn("interruptedPrevious", source)
+        self.assertIn("unawaited(_clearPlaybackCache(item));", source)
+
+    def test_mini_player_swipes_keep_audio_handoff_and_animation_independent(self):
+        source = (ROOT / "lib/src/app/app.dart").read_text(encoding="utf-8")
+        self.assertIn("onHorizontalDragStart: _handleHorizontalDragStart", source)
+        self.assertIn("unawaited(player.prepareForTransition(target));", source)
+        self.assertIn("unawaited(player.open(target));", source)
+        self.assertLess(
+            source.index("unawaited(player.open(target));"),
+            source.index("await _animateHorizontal(", source.index("unawaited(player.open(target));")),
+        )
+        self.assertIn("_pendingSwitchKey == targetKey", source)
+        self.assertIn("ValueListenableBuilder<double>", source)
+
+    def test_mini_player_pull_down_collapses_continuously(self):
+        source = (ROOT / "lib/src/app/app.dart").read_text(encoding="utf-8")
+        self.assertIn("onVerticalDragStart: _handleVerticalDragStart", source)
+        self.assertIn("_verticalController.stop();", source)
+        self.assertIn("heightFactor: 1 - verticalProgress", source)
+        self.assertIn("projectedOffset", source)
 
     def test_failed_artwork_requests_are_not_cached_forever(self):
         source = (ROOT / "lib/src/features/library/application/media_library_controller.dart").read_text(encoding="utf-8")

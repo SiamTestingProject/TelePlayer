@@ -14,16 +14,16 @@ audio.AudioPlayer createTelePlayerAudioPlayer() {
     useLazyPreparation: false,
     audioLoadConfiguration: const audio.AudioLoadConfiguration(
       androidLoadControl: audio.AndroidLoadControl(
-        // Keep a generous safety window while TDLib prepares a complete local
-        // file. Once that file is ready PlayerController swaps the localhost
-        // stream for file:// playback, removing the Dart HTTP server from the
-        // background playback path entirely.
-        minBufferDuration: Duration(minutes: 2),
-        maxBufferDuration: Duration(minutes: 5),
+        // Build a practical safety window without forcing ExoPlayer to fetch
+        // two full minutes before every start/rebuffer. PlayerController then
+        // swaps the localhost stream for a complete file:// source, removing
+        // the Dart HTTP server from established background playback entirely.
+        minBufferDuration: Duration(seconds: 45),
+        maxBufferDuration: Duration(minutes: 3),
         bufferForPlaybackDuration: Duration(seconds: 2),
-        bufferForPlaybackAfterRebufferDuration: Duration(seconds: 10),
+        bufferForPlaybackAfterRebufferDuration: Duration(seconds: 6),
         prioritizeTimeOverSizeThresholds: true,
-        backBufferDuration: Duration(seconds: 30),
+        backBufferDuration: Duration(seconds: 20),
       ),
     ),
   );

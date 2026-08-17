@@ -19,7 +19,8 @@ class PlayerController extends ChangeNotifier {
   }) : _systemMediaBridge = systemMediaBridge;
 
   static const int _maxRecoveryAttempts = 6;
-  static const Duration _bufferingWatchdogDelay = Duration(seconds: 18);
+  static const Duration _bufferingWatchdogDelay = Duration(seconds: 30);
+  static const Duration _bufferingProgressTolerance = Duration(seconds: 1);
 
   final MediaLibraryController _libraryController;
   final SystemMediaBridge? _systemMediaBridge;
@@ -27,6 +28,8 @@ class PlayerController extends ChangeNotifier {
   final Random _random = Random();
   final List<StreamSubscription<dynamic>> _playerSubscriptions =
       <StreamSubscription<dynamic>>[];
+  final Map<String, Future<Uri>> _preparedStreamUris =
+      <String, Future<Uri>>{};
 
   audio.AudioPlayer? _audioPlayer;
   MediaItem? _item;
@@ -108,6 +111,22 @@ class PlayerController extends ChangeNotifier {
     return _open(item);
   }
 
+  /// Resolves Telegram metadata and registers the localhost source without
+  /// touching the native player. Gesture animations call this early so the
+  /// current song can keep playing until the user actually commits the swipe.
+  Future<void> prepareForTransition(MediaItem item) async {
+    if (_disposed ||
+        item.kind != MediaKind.audio ||
+        item.messageKey == _item?.messageKey) {
+      return;
+    }
+    try {
+      await _preparedStreamUri(item);
+    } catch (_) {
+      // open() will retry normally if this optional preparation failed.
+    }
+  }
+
   Future<void> _open(
     MediaItem item, {
     Duration resumeAt = Duration.zero,
@@ -125,7 +144,7 @@ class PlayerController extends ChangeNotifier {
       // taps another song while this request is in flight, the generation
       // check below drops the stale request without racing two setAudioSources
       // calls against ExoPlayer/Media3.
-      final uri = await _libraryController.streamUriFor(item);
+      final uri = await _takePreparedStreamUri(item);
       if (generation != _openGeneration || _disposed) {
         return;
       }
@@ -136,18 +155,66 @@ class PlayerController extends ChangeNotifier {
           return;
         }
         playbackItemToClean = _activePlaybackItem;
-        await player.stop();
-        if (generation != _openGeneration || _disposed) {
-          return;
-        }
         final source = audio.AudioSource.uri(uri);
-        await player
-            .setAudioSources(
-              <audio.AudioSource>[source],
-              initialIndex: 0,
-              initialPosition: resumeAt,
-            )
-            .timeout(const Duration(seconds: 60));
+        final canAppendForContinuousSwitch =
+            _activePlaybackItem != null &&
+            _activePlaybackItem!.messageKey != item.messageKey &&
+            (player.sequence?.isNotEmpty ?? false);
+        if (canAppendForContinuousSwitch) {
+          // just_audio's playlist keeps the current source alive while the new
+          // source is appended/prepared. Seeking to that prepared entry avoids
+          // the explicit stop -> load -> play gap that mini-player swipes used
+          // to trigger. Remove the obsolete entries only after takeover.
+          final targetIndex = player.sequence!.length;
+          await player
+              .addAudioSource(source)
+              .timeout(const Duration(seconds: 30));
+          if (generation != _openGeneration || _disposed) {
+            if ((player.sequence?.length ?? 0) > targetIndex) {
+              await player.removeAudioSourceAt(targetIndex);
+            }
+            if (!_disposed &&
+                _item?.messageKey != item.messageKey) {
+              unawaited(_clearPlaybackCache(item));
+            }
+            return;
+          }
+          await player
+              .seek(resumeAt, index: targetIndex)
+              .timeout(const Duration(seconds: 30));
+          if (generation != _openGeneration || _disposed) {
+            if (_disposed) {
+              return;
+            }
+            // This source already became current before a rapid follow-up
+            // gesture superseded it. Complete the takeover bookkeeping so the
+            // queued request can append continuously and every replaced or
+            // transient song still reaches temporary-file cleanup.
+            if (targetIndex > 0) {
+              await player.removeAudioSourceRange(0, targetIndex);
+            }
+            _activePlaybackItem = item;
+            final interruptedPrevious = playbackItemToClean;
+            if (!_disposed &&
+                interruptedPrevious != null &&
+                interruptedPrevious.messageKey != item.messageKey &&
+                interruptedPrevious.messageKey != _item?.messageKey) {
+              unawaited(_clearPlaybackCache(interruptedPrevious));
+            }
+            return;
+          }
+          if (targetIndex > 0) {
+            await player.removeAudioSourceRange(0, targetIndex);
+          }
+        } else {
+          await player
+              .setAudioSources(
+                <audio.AudioSource>[source],
+                initialIndex: 0,
+                initialPosition: resumeAt,
+              )
+              .timeout(const Duration(seconds: 60));
+        }
         if (generation != _openGeneration || _disposed) {
           return;
         }
@@ -165,10 +232,23 @@ class PlayerController extends ChangeNotifier {
           stalePlaybackItem.messageKey != item.messageKey) {
         unawaited(_clearPlaybackCache(stalePlaybackItem));
       }
+      // setAudioSources/addAudioSource has now prepared an initial safety
+      // buffer. Starting the whole-file TDLib wait only after that point avoids
+      // competing with the latency-sensitive first range while still moving
+      // established playback onto a background-safe file:// source.
+      final directUriFuture =
+          _libraryController.prepareDirectPlaybackUri(item);
       _publishSystemMediaItem(item, generation);
       _recoveryBaseline = resumeAt;
       unawaited(_startPlayback(player, generation));
-      unawaited(_upgradeToDirectPlaybackFile(item, generation));
+      unawaited(
+        _upgradeToDirectPlaybackFile(
+          item,
+          generation,
+          directUriFuture,
+        ),
+      );
+      unawaited(_prewarmAdjacentTransitions());
     } on TimeoutException catch (error) {
       if (generation == _openGeneration) {
         _error = AppException(
@@ -307,13 +387,14 @@ class PlayerController extends ChangeNotifier {
   Future<void> _upgradeToDirectPlaybackFile(
     MediaItem item,
     int generation,
+    Future<Uri?> directUriFuture,
   ) async {
     try {
       // This download is deliberately cancellable when the user changes
       // tracks. Cancellation used to escape this unawaited future as an
       // unhandled async error, which could terminate the app during rapid song
       // switches. Keep the entire preparation/handoff inside this guard.
-      final directUri = await _libraryController.prepareDirectPlaybackUri(item);
+      final directUri = await directUriFuture;
       if (directUri == null || directUri.scheme != 'file') {
         return;
       }
@@ -341,19 +422,44 @@ class PlayerController extends ChangeNotifier {
           return;
         }
         final wasPlaying = player.playing;
-        final resumeAt = player.position;
         // The initial localhost stream gives instant startup, but a Dart HTTP
         // server is vulnerable to aggressive OEM background throttling. As
         // soon as TDLib has the complete file, hand playback to ExoPlayer as a
-        // file:// source. Serializing this mutation with normal song switches
-        // prevents two native source replacements from racing each other.
-        await player
-            .setAudioSources(
-              <audio.AudioSource>[audio.AudioSource.uri(directUri)],
-              initialIndex: 0,
-              initialPosition: resumeAt,
-            )
-            .timeout(const Duration(seconds: 20));
+        // file:// source. Append and prepare that source while the stream keeps
+        // playing, then seek across at the latest position. This avoids another
+        // stop/load gap during the background-reliability handoff.
+        final sequenceLength = player.sequence?.length ?? 0;
+        if (sequenceLength > 0) {
+          await player
+              .addAudioSource(audio.AudioSource.uri(directUri))
+              .timeout(const Duration(seconds: 20));
+          if (_disposed ||
+              generation != _openGeneration ||
+              _item?.messageKey != item.messageKey) {
+            if ((player.sequence?.length ?? 0) > sequenceLength) {
+              await player.removeAudioSourceAt(sequenceLength);
+            }
+            return;
+          }
+          final resumeAt = player.position;
+          await player
+              .seek(resumeAt, index: sequenceLength)
+              .timeout(const Duration(seconds: 20));
+          if (_disposed ||
+              generation != _openGeneration ||
+              _item?.messageKey != item.messageKey) {
+            return;
+          }
+          await player.removeAudioSourceRange(0, sequenceLength);
+        } else {
+          await player
+              .setAudioSources(
+                <audio.AudioSource>[audio.AudioSource.uri(directUri)],
+                initialIndex: 0,
+                initialPosition: player.position,
+              )
+              .timeout(const Duration(seconds: 20));
+        }
         if (_disposed ||
             generation != _openGeneration ||
             _item?.messageKey != item.messageKey) {
@@ -541,6 +647,52 @@ class PlayerController extends ChangeNotifier {
     return player;
   }
 
+  Future<Uri> _preparedStreamUri(MediaItem item) {
+    final key = item.messageKey;
+    final existing = _preparedStreamUris[key];
+    if (existing != null) {
+      return existing;
+    }
+    while (_preparedStreamUris.length >= 4) {
+      _preparedStreamUris.remove(_preparedStreamUris.keys.first);
+    }
+    final request = _libraryController.streamUriFor(item);
+    _preparedStreamUris[key] = request;
+    unawaited(
+      request.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace __) {
+          if (identical(_preparedStreamUris[key], request)) {
+            _preparedStreamUris.remove(key);
+          }
+        },
+      ),
+    );
+    return request;
+  }
+
+  Future<Uri> _takePreparedStreamUri(MediaItem item) {
+    final prepared = _preparedStreamUris.remove(item.messageKey);
+    return prepared ?? _libraryController.streamUriFor(item);
+  }
+
+  Future<void> _prewarmAdjacentTransitions() async {
+    if (_shuffleEnabled || _disposed) {
+      return;
+    }
+    final current = _item;
+    if (current == null) {
+      return;
+    }
+    final adjacent = <MediaItem?>[_adjacentItem(-1), _adjacentItem(1)];
+    await Future.wait(
+      adjacent
+          .whereType<MediaItem>()
+          .where((candidate) => candidate.messageKey != current.messageKey)
+          .map(prepareForTransition),
+    );
+  }
+
   MediaItem? _adjacentItem(int direction) {
     final queue = _libraryController.items
         .where((candidate) => candidate.kind == MediaKind.audio)
@@ -620,7 +772,13 @@ class PlayerController extends ChangeNotifier {
     if (_bufferingWatchdog != null || _disposed || _isRecovering) {
       return;
     }
+    final player = _audioPlayer;
+    if (player == null) {
+      return;
+    }
     final generation = _openGeneration;
+    final stalledAtPosition = player.position;
+    final stalledAtBufferedPosition = player.bufferedPosition;
     _bufferingWatchdog = Timer(_bufferingWatchdogDelay, () {
       _bufferingWatchdog = null;
       final player = _audioPlayer;
@@ -637,10 +795,23 @@ class PlayerController extends ChangeNotifier {
       if (!stillStalled) {
         return;
       }
+      final positionProgress =
+          player.position - stalledAtPosition >= _bufferingProgressTolerance;
+      final bufferProgress =
+          player.bufferedPosition - stalledAtBufferedPosition >=
+              _bufferingProgressTolerance;
+      if (positionProgress || bufferProgress) {
+        // Telegram is still delivering useful data. Give the native full-file
+        // preparation another window instead of throwing away that progress
+        // and reopening the stream, which used to create repeated background
+        // buffering loops on slower connections.
+        _armBufferingWatchdog();
+        return;
+      }
       _recoverPlayback(
         const AppException(
           AppErrorCode.networkInterrupted,
-          message: 'Telegram playback remained buffered for too long.',
+          message: 'Telegram playback stopped making buffering progress.',
         ),
       );
     });
@@ -721,6 +892,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _clearPlaybackCache(MediaItem item) async {
+    _preparedStreamUris.remove(item.messageKey);
     try {
       await _libraryController.clearPlaybackCache(item);
     } catch (_) {
@@ -756,6 +928,7 @@ class PlayerController extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
     _playerSubscriptions.clear();
+    _preparedStreamUris.clear();
     final player = _audioPlayer;
     _audioPlayer = null;
     final bridge = _systemMediaBridge;

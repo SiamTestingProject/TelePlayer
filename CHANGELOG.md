@@ -1,3 +1,12 @@
+## [1.4.31] - 2026-08-17
+
+- Made the Library mini-player follow a downward drag while its occupied space collapses continuously, so it slides smoothly behind the navigation bar without an abrupt final jump.
+- Fixed mini-player vertical gestures fighting an in-progress snap-back animation; a new pull now takes over cleanly from the card's current position.
+- Horizontal mini-player swipes now begin the serialized append/seek track handoff as soon as the gesture commits, keeping the current source playing while the next source prepares instead of adding the animation duration to the switch.
+- Isolated horizontal and vertical animation ticks from album artwork/control rebuilds and made snap-back animations interruptible, improving repeated and rapid swipe smoothness.
+- Reduced Android's excessive initial/rebuffer thresholds, starts native whole-file preparation after the urgent startup range is ready, and only invokes buffering recovery when neither playback nor buffered data has progressed for a full watchdog window.
+- Increased localhost streaming chunks to reduce native/Dart request overhead while preserving prompt incremental flushes and the existing replaced/completed temporary-song cleanup.
+
 ## [1.4.30] - 2026-08-17
 
 - Completely replaced the previous TelePlayer branding with the newly supplied black-background white/blue music-note logo across the Flutter UI, Android launcher/adaptive/round icons, Windows executable, and installer.

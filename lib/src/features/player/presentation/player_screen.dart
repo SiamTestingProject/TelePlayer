@@ -684,7 +684,10 @@ class _ArtworkCarouselState extends State<_ArtworkCarousel>
   }
 
   void _updateDrag(DragUpdateDetails details) {
-    if (_transitionItem != null || _settleController.isAnimating) {
+    final player = AppScope.of(context).playerController;
+    if (player.isLoading ||
+        _transitionItem != null ||
+        _settleController.isAnimating) {
       return;
     }
     final nextOffset = (_dragOffset + details.delta.dx)
@@ -697,11 +700,18 @@ class _ArtworkCarouselState extends State<_ArtworkCarousel>
     if (nextOffset > 0 && _displayedPrevious == null) {
       return;
     }
+    final target = nextOffset < 0 ? _displayedNext : _displayedPrevious;
+    if (target != null) {
+      unawaited(player.prepareForTransition(target));
+    }
     setState(() => _dragOffset = nextOffset);
   }
 
   Future<void> _finishDrag(DragEndDetails details) async {
-    if (_transitionItem != null || _settleController.isAnimating) {
+    final player = AppScope.of(context).playerController;
+    if (player.isLoading ||
+        _transitionItem != null ||
+        _settleController.isAnimating) {
       return;
     }
     final velocity = details.primaryVelocity ?? 0;
@@ -720,11 +730,12 @@ class _ArtworkCarouselState extends State<_ArtworkCarousel>
     final destination = direction < 0 ? -_travel : _travel;
     final targetKey = target.messageKey;
     _pendingSwipeKey = targetKey;
+    unawaited(player.prepareForTransition(target));
     await _animateOffset(_dragOffset, destination);
     if (!mounted || _pendingSwipeKey != targetKey) {
       return;
     }
-    unawaited(AppScope.of(context).playerController.open(target));
+    unawaited(player.open(target));
   }
 
   Future<void> _animateExternalSwitch(

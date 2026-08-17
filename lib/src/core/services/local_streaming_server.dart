@@ -125,9 +125,10 @@ class LocalStreamingServer {
   }
 
   Future<void> _writeRange(HttpResponse response, MediaItem item, ByteRange range) async {
-    // Balance request overhead with low-bandwidth responsiveness. Very large
-    // synchronous TDLib reads can exceed a native player's socket timeout.
-    const chunkSize = 256 * 1024;
+    // Use fewer native/Dart round trips while maintaining prompt flushes on a
+    // slower connection. The concurrent TDLib whole-file request takes over
+    // once enough data is available for direct file playback.
+    const chunkSize = 512 * 1024;
     var cursor = range.start;
     while (cursor <= range.end) {
       final boundary = _partBoundaryEnd(item, cursor);
