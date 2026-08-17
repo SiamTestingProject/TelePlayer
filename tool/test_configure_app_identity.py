@@ -15,6 +15,27 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             root = Path(directory)
             manifest = root / "android/app/src/main/AndroidManifest.xml"
             manifest.parent.mkdir(parents=True)
+            build_file = root / "android/app/build.gradle.kts"
+            build_file.parent.mkdir(parents=True, exist_ok=True)
+            build_file.write_text(
+                'android {\n'
+                '    namespace = "com.example.telegram_media_player"\n'
+                '    defaultConfig {\n'
+                '        applicationId = "com.example.telegram_media_player"\n'
+                '    }\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            activity = (
+                root
+                / "android/app/src/main/kotlin/com/example/telegram_media_player/MainActivity.kt"
+            )
+            activity.parent.mkdir(parents=True, exist_ok=True)
+            activity.write_text(
+                'package com.example.telegram_media_player\n\n'
+                'class MainActivity\n',
+                encoding="utf-8",
+            )
             manifest.write_text(
                 '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
                 '    <application android:label="telegram_media_player">\n'
@@ -30,12 +51,26 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             manifest_text = manifest.read_text()
             ElementTree.fromstring(manifest_text)
             self.assertIn('android:label="TelePlayer"', manifest_text)
+            self.assertIn('namespace = "com.siam.teleplayer"', build_file.read_text())
+            self.assertIn('applicationId = "com.siam.teleplayer"', build_file.read_text())
+            moved_activity = (
+                root / "android/app/src/main/kotlin/com/siam/teleplayer/MainActivity.kt"
+            )
+            self.assertTrue(moved_activity.is_file())
+            self.assertIn('package com.siam.teleplayer', moved_activity.read_text())
+            self.assertFalse(activity.exists())
             self.assertEqual(
                 manifest_text.count('android.permission.INTERNET'),
                 1,
             )
             self.assertEqual(
                 manifest_text.count('android.permission.POST_NOTIFICATIONS'),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count(
+                    'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'
+                ),
                 1,
             )
             self.assertEqual(

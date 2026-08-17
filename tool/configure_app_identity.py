@@ -10,11 +10,16 @@ from pathlib import Path
 
 DISPLAY_NAME = "TelePlayer"
 WINDOWS_BINARY_NAME = "teleplayer"
+ANDROID_APPLICATION_ID = "com.siam.teleplayer"
 ANDROID_INTERNET_PERMISSION = (
     '<uses-permission android:name="android.permission.INTERNET" />'
 )
 ANDROID_NOTIFICATION_PERMISSION = (
     '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'
+)
+ANDROID_BATTERY_OPTIMIZATION_PERMISSION = (
+    '<uses-permission '
+    'android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />'
 )
 ANDROID_BACKGROUND_AUDIO_PERMISSIONS = (
     '<uses-permission android:name="android.permission.WAKE_LOCK" />',
@@ -57,7 +62,86 @@ def _replace(path: Path, pattern: str, replacement: str) -> None:
         path.write_text(updated, encoding="utf-8")
 
 
+
+def _configure_android_application_id(root: Path) -> None:
+    app_dir = root / "android" / "app"
+    build_file = app_dir / "build.gradle.kts"
+    kotlin_dsl = True
+    if not build_file.is_file():
+        build_file = app_dir / "build.gradle"
+        kotlin_dsl = False
+    if not build_file.is_file():
+        raise FileNotFoundError(
+            f"Generated Android app Gradle file is missing under {app_dir}"
+        )
+
+    original = build_file.read_text(encoding="utf-8")
+    if kotlin_dsl:
+        updated, namespace_count = re.subn(
+            r'(?m)^(\s*)namespace\s*=\s*"[^"]+"',
+            rf'\1namespace = "{ANDROID_APPLICATION_ID}"',
+            original,
+            count=1,
+        )
+        updated, application_count = re.subn(
+            r'(?m)^(\s*)applicationId\s*=\s*"[^"]+"',
+            rf'\1applicationId = "{ANDROID_APPLICATION_ID}"',
+            updated,
+            count=1,
+        )
+    else:
+        updated, namespace_count = re.subn(
+            r'(?m)^(\s*)namespace\s+["\'][^"\']+["\']',
+            rf'\1namespace "{ANDROID_APPLICATION_ID}"',
+            original,
+            count=1,
+        )
+        updated, application_count = re.subn(
+            r'(?m)^(\s*)applicationId\s+["\'][^"\']+["\']',
+            rf'\1applicationId "{ANDROID_APPLICATION_ID}"',
+            updated,
+            count=1,
+        )
+
+    if namespace_count == 0:
+        raise RuntimeError(f"Expected Android namespace was not found in {build_file}")
+    if application_count == 0:
+        raise RuntimeError(f"Expected Android applicationId was not found in {build_file}")
+    if updated != original:
+        build_file.write_text(updated, encoding="utf-8")
+
+    for language in ("kotlin", "java"):
+        source_root = app_dir / "src" / "main" / language
+        if not source_root.is_dir():
+            continue
+        activity_files = list(source_root.rglob("MainActivity.kt")) + list(
+            source_root.rglob("MainActivity.java")
+        )
+        for activity in activity_files:
+            activity_text = activity.read_text(encoding="utf-8")
+            activity_text, package_count = re.subn(
+                r'(?m)^package\s+[A-Za-z0-9_.]+\s*;?',
+                f'package {ANDROID_APPLICATION_ID}',
+                activity_text,
+                count=1,
+            )
+            if package_count == 0:
+                raise RuntimeError(
+                    f"Expected MainActivity package declaration was not found in {activity}"
+                )
+            destination = (
+                source_root
+                / Path(*ANDROID_APPLICATION_ID.split("."))
+                / activity.name
+            )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(activity_text, encoding="utf-8")
+            if activity.resolve() != destination.resolve():
+                activity.unlink()
+
+
 def configure_android(root: Path) -> None:
+    _configure_android_application_id(root)
     manifest = root / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
     _replace(
         manifest,
@@ -79,6 +163,7 @@ def configure_android(root: Path) -> None:
     permissions = (
         ANDROID_INTERNET_PERMISSION,
         ANDROID_NOTIFICATION_PERMISSION,
+        ANDROID_BATTERY_OPTIMIZATION_PERMISSION,
         *ANDROID_BACKGROUND_AUDIO_PERMISSIONS,
     )
     for permission in permissions:

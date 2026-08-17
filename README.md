@@ -70,6 +70,7 @@ flutter run --dart-define=GITHUB_REPOSITORY=owner/repository
 ```
 
 On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project.
+The Android package/application ID is `com.siam.teleplayer`.
 The identity step also installs the Android background-audio service, receiver,
 foreground-service permissions, and loopback streaming permission. The TDLib
 compatibility patch adds its required Android namespace and raises the plugin's
@@ -101,19 +102,19 @@ Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Push a version tag such as `v1.4.4` to publish a normal GitHub Release instead.
+Push a version tag such as `v1.4.6` to publish a normal GitHub Release instead.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.4.4.apk`
-- `TelePlayer-v1.4.4-arm64.apk`
-- `TelePlayer-v1.4.4-armeabi-v7a.apk`
-- `TelePlayer-v1.4.4-x86_64.apk`
-- `TelePlayer-v1.4.4-aab.aab`
-- `TelePlayer-v1.4.4-Setup.exe`
-- `TelePlayer-v1.4.4-windows-x64.zip`
+- `TelePlayer-v1.4.6.apk`
+- `TelePlayer-v1.4.6-arm64.apk`
+- `TelePlayer-v1.4.6-armeabi-v7a.apk`
+- `TelePlayer-v1.4.6-x86_64.apk`
+- `TelePlayer-v1.4.6-aab.aab`
+- `TelePlayer-v1.4.6-Setup.exe`
+- `TelePlayer-v1.4.6-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

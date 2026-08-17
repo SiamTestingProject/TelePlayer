@@ -423,8 +423,15 @@ class _BackgroundActivitySettingsPageState
       } else if (currentStatus.isPermanentlyDenied) {
         await openAppSettings();
       } else {
-        await Permission.ignoreBatteryOptimizations.request();
-        await _refreshStatus();
+        final result = await Permission.ignoreBatteryOptimizations.request();
+        if (!mounted) {
+          return;
+        }
+        setState(() => _status = result);
+        if (!result.isGranted && result.isPermanentlyDenied) {
+          await openAppSettings();
+          await _refreshStatus();
+        }
       }
     } finally {
       if (mounted) {

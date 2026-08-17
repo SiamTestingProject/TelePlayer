@@ -22,6 +22,9 @@ class NotificationPermissionSetupTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("android.permission.POST_NOTIFICATIONS", identity)
+        self.assertIn(
+            "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", identity
+        )
         self.assertIn("android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK", identity)
         self.assertIn("com.ryanheise.audioservice.AudioService", identity)
         self.assertIn('android:stopWithTask="false"', identity)
