@@ -71,7 +71,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         ),
                       ),
                       IconButton.filledTonal(
-                        tooltip: 'Cache all songs and album artwork',
+                        tooltip: 'Cache new songs and album artwork',
                         onPressed: library.isCaching
                             ? null
                             : () => unawaited(_cacheAll(scope)),
@@ -102,20 +102,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     child: _ChannelCacheBanner(progress: library.cacheProgress!),
                   ),
                 ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
-                  child: _ActionRow(
-                    shuffleEnabled: scope.playerController.shuffleEnabled,
-                    sortOrder: _sortOrder,
-                    onShuffle: () {
-                      scope.playerController.toggleShuffle();
-                      setState(() {});
-                    },
-                    onSortChanged: (value) => setState(() => _sortOrder = value),
+              if (_openGroup != null ||
+                  _section == _LibrarySection.songs ||
+                  _section == _LibrarySection.liked)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 2, 18, 14),
+                    child: _SortBar(
+                      sortOrder: _sortOrder,
+                      onSortChanged: (value) =>
+                          setState(() => _sortOrder = value),
+                    ),
                   ),
                 ),
-              ),
               if (_openGroup != null)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -428,78 +427,55 @@ class _SectionBar extends StatelessWidget {
       };
 }
 
-class _ActionRow extends StatelessWidget {
-  const _ActionRow({
-    required this.shuffleEnabled,
+class _SortBar extends StatelessWidget {
+  const _SortBar({
     required this.sortOrder,
-    required this.onShuffle,
     required this.onSortChanged,
   });
 
-  final bool shuffleEnabled;
   final MediaSortOrder sortOrder;
-  final VoidCallback onShuffle;
   final ValueChanged<MediaSortOrder> onSortChanged;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Row(
-      children: <Widget>[
-        FilledButton.tonalIcon(
-          key: const ValueKey<String>('library-shuffle'),
-          onPressed: onShuffle,
-          icon: const Icon(Icons.shuffle_rounded),
-          label: const Text('Shuffle'),
-          style: FilledButton.styleFrom(
-            backgroundColor: shuffleEnabled ? colors.primaryContainer : null,
-            foregroundColor: shuffleEnabled ? colors.onPrimaryContainer : null,
-          ),
-        ),
-        const Spacer(),
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: colors.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: const Icon(Icons.view_agenda_rounded),
-        ),
-        const SizedBox(width: 8),
-        PopupMenuButton<MediaSortOrder>(
-          tooltip: 'Sort Library',
-          initialValue: sortOrder,
-          onSelected: onSortChanged,
-          itemBuilder: (_) => const <PopupMenuEntry<MediaSortOrder>>[
-            PopupMenuItem(
-              value: MediaSortOrder.newest,
-              child: ListTile(
-                leading: Icon(Icons.schedule_rounded),
-                title: Text('Newest'),
-                contentPadding: EdgeInsets.zero,
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 286),
+        child: KeyedSubtree(
+          key: const ValueKey<String>('library-sort-control'),
+          child: SegmentedButton<MediaSortOrder>(
+            key: const ValueKey<String>('library-sort-selector'),
+            segments: const <ButtonSegment<MediaSortOrder>>[
+              ButtonSegment<MediaSortOrder>(
+                value: MediaSortOrder.newest,
+                icon: Icon(Icons.schedule_rounded),
+                label: Text('Newest'),
+              ),
+              ButtonSegment<MediaSortOrder>(
+                value: MediaSortOrder.alphabetical,
+                icon: Icon(Icons.sort_by_alpha_rounded),
+                label: Text('A-Z'),
+              ),
+            ],
+            selected: <MediaSortOrder>{sortOrder},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) {
+              if (selection.isNotEmpty) {
+                onSortChanged(selection.first);
+              }
+            },
+            style: ButtonStyle(
+              minimumSize: const WidgetStatePropertyAll<Size>(Size(0, 48)),
+              visualDensity: VisualDensity.compact,
+              side: WidgetStatePropertyAll<BorderSide>(
+                BorderSide(color: colors.outlineVariant),
               ),
             ),
-            PopupMenuItem(
-              value: MediaSortOrder.alphabetical,
-              child: ListTile(
-                leading: Icon(Icons.sort_by_alpha_rounded),
-                title: Text('A-Z'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Icon(Icons.sort_rounded),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -574,7 +550,7 @@ class _ChannelCacheBanner extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Caching channel library',
+                  'Syncing channel library',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: colors.onSecondaryContainer,
                         fontWeight: FontWeight.w800,

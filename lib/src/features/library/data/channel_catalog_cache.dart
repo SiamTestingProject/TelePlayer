@@ -39,12 +39,57 @@ class ChannelCatalogCache {
     }
   }
 
-  Future<void> writeItems(List<MediaItem> items) async {
+  Future<Set<int>> readFullyScannedChannels({int legacyRecentLimit = 60}) async {
+    try {
+      final file = await _catalogFile();
+      if (!await file.exists()) {
+        return <int>{};
+      }
+      final json = jsonDecode(await file.readAsString());
+      if (json is! Map) {
+        return <int>{};
+      }
+      final explicit = json['fullyScannedChannels'];
+      if (explicit is List) {
+        return explicit
+            .map((value) => int.tryParse(value.toString()))
+            .whereType<int>()
+            .toSet();
+      }
+
+      // Legacy TelePlayer builds did not record whether catalog.json came from
+      // the lightweight recent scan or the full Cache operation. A channel
+      // with more entries than the old recent-scan limit could only have come
+      // from a previous full Cache operation, so preserve that work during
+      // migration. A recent-only legacy catalog (at most the limit) gets one
+      // safe full scan and is then marked.
+      final items = await readItems();
+      final counts = <int, int>{};
+      for (final item in items) {
+        counts.update(item.chatId, (value) => value + 1, ifAbsent: () => 1);
+      }
+      return counts.entries
+          .where((entry) => entry.value > legacyRecentLimit)
+          .map((entry) => entry.key)
+          .toSet();
+    } on FormatException {
+      return <int>{};
+    } on FileSystemException {
+      return <int>{};
+    }
+  }
+
+  Future<void> writeItems(
+    List<MediaItem> items, {
+    Set<int> fullyScannedChannels = const <int>{},
+  }) async {
     final file = await _catalogFile();
     final normalizedItems = _deduplicateByMessage(items);
+    final scannedChannels = fullyScannedChannels.toList(growable: false)..sort();
     final payload = <String, dynamic>{
-      'version': 2,
+      'version': 3,
       'savedAt': DateTime.now().toUtc().toIso8601String(),
+      'fullyScannedChannels': scannedChannels,
       'items': normalizedItems
           .map((item) => item.toJson())
           .toList(growable: false),
@@ -102,11 +147,17 @@ class ChannelCatalogCache {
   Future<Uint8List?> readArtwork(MediaItem item) async {
     try {
       final file = await _artworkFile(item);
-      if (!await file.exists()) {
-        return null;
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        return bytes.isEmpty ? null : bytes;
       }
-      final bytes = await file.readAsBytes();
-      return bytes.isEmpty ? null : bytes;
+
+      // TDLib file IDs are local database identifiers and may change after an
+      // app restart/re-login. Older TelePlayer builds included fileId in the
+      // artwork filename, so the same Telegram message could no longer find its
+      // high-resolution cover after reopening the app. Migrate any legacy
+      // <chat>_<message>_<file>.artwork entry to the stable message-based key.
+      return await _migrateLegacyArtwork(item, file);
     } on FileSystemException {
       return null;
     }
@@ -118,6 +169,46 @@ class ChannelCatalogCache {
     }
     final file = await _artworkFile(item);
     await file.writeAsBytes(bytes, flush: true);
+  }
+
+  Future<Uint8List?> _migrateLegacyArtwork(
+    MediaItem item,
+    File stableFile,
+  ) async {
+    final artwork = await _artworkDirectory();
+    final prefix = '${item.chatId}_${item.messageId}_';
+    File? bestLegacy;
+    var bestLength = 0;
+
+    await for (final entity in artwork.list(followLinks: false)) {
+      if (entity is! File) {
+        continue;
+      }
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (!name.startsWith(prefix) || !name.endsWith('.artwork')) {
+        continue;
+      }
+      try {
+        final length = await entity.length();
+        if (length > bestLength) {
+          bestLength = length;
+          bestLegacy = entity;
+        }
+      } on FileSystemException {
+        // Ignore a single unreadable legacy entry and keep looking.
+      }
+    }
+
+    if (bestLegacy == null || bestLength <= 0) {
+      return null;
+    }
+
+    final bytes = await bestLegacy.readAsBytes();
+    if (bytes.isEmpty) {
+      return null;
+    }
+    await stableFile.writeAsBytes(bytes, flush: true);
+    return bytes;
   }
 
   Future<File> _catalogFile() async {
@@ -139,6 +230,17 @@ class ChannelCatalogCache {
   }
 
   Future<File> _artworkFile(MediaItem item) async {
+    final artwork = await _artworkDirectory();
+    // chatId + messageId is Telegram's stable identity for this song. Never use
+    // TDLib fileId here: it can change when TDLib rebuilds its local database,
+    // which previously made cached covers appear blurry after an app restart.
+    final key = '${item.chatId}_${item.messageId}';
+    return File(
+      '${artwork.path}${Platform.pathSeparator}$key.artwork',
+    );
+  }
+
+  Future<Directory> _artworkDirectory() async {
     final directory = await _cacheDirectory();
     final artwork = Directory(
       '${directory.path}${Platform.pathSeparator}artwork-v$_artworkCacheRevision',
@@ -146,12 +248,7 @@ class ChannelCatalogCache {
     if (!await artwork.exists()) {
       await artwork.create(recursive: true);
     }
-    // Use Telegram numeric identifiers rather than the title/file name so the
-    // cache path is stable and safe on Android and Windows.
-    final key = '${item.chatId}_${item.messageId}_${item.fileId}';
-    return File(
-      '${artwork.path}${Platform.pathSeparator}$key.artwork',
-    );
+    return artwork;
   }
 
   Future<Directory> _cacheDirectory() async {

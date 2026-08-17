@@ -22,7 +22,9 @@ class TdlibTelegramClient
         TelegramClient,
         EmbeddedArtworkProvider,
         AudioTechnicalMetadataProvider,
-        PlaybackCacheCleaner {
+        PlaybackCacheCleaner,
+        IncrementalMediaScanner,
+        DirectPlaybackFileProvider {
   TdlibTelegramClient(
     this._gateway, {
     ApplicationSupportDirectoryProvider? applicationSupportDirectory,
@@ -251,6 +253,88 @@ class TdlibTelegramClient
     return items;
   }
 
+  @override
+  Future<List<MediaItem>> listMediaSince({
+    required List<int> channelIds,
+    required Map<int, int> afterMessageIdByChannel,
+    required void Function(MediaScanProgress progress) onProgress,
+  }) async {
+    await _ensureChatsAvailable(channelIds);
+    final items = <MediaItem>[];
+    var scannedMessages = 0;
+
+    for (final chatId in channelIds) {
+      final afterMessageId = afterMessageIdByChannel[chatId] ?? 0;
+      var fromMessageId = 0;
+      final seenMessageIds = <int>{};
+      var reachedBoundary = false;
+
+      while (!reachedBoundary) {
+        final response = await _gateway.send(
+          td.GetChatHistory(
+            chatId: chatId,
+            fromMessageId: fromMessageId,
+            offset: 0,
+            limit: 100,
+            onlyLocal: false,
+          ),
+          timeout: const Duration(minutes: 2),
+        );
+        final messages =
+            (response['messages'] as List<dynamic>? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map((message) => Map<String, dynamic>.from(message))
+                .toList(growable: false);
+        if (messages.isEmpty) {
+          break;
+        }
+
+        var newMessages = 0;
+        for (final message in messages) {
+          final messageId = int.tryParse(message['id']?.toString() ?? '') ?? 0;
+          if (messageId <= 0 || !seenMessageIds.add(messageId)) {
+            continue;
+          }
+          if (afterMessageId > 0 && messageId <= afterMessageId) {
+            reachedBoundary = true;
+            break;
+          }
+          newMessages += 1;
+          final item = _mediaFromMessage(chatId, message);
+          if (item != null) {
+            items.add(item);
+          }
+        }
+        scannedMessages += newMessages;
+        onProgress(
+          MediaScanProgress(
+            scannedMessages: scannedMessages,
+            mediaCount: items.length,
+          ),
+        );
+
+        if (reachedBoundary || newMessages == 0) {
+          break;
+        }
+        final oldestMessageId = messages
+            .map((message) =>
+                int.tryParse(message['id']?.toString() ?? '') ?? 0)
+            .where((id) => id > 0)
+            .fold<int>(
+              0,
+              (oldest, id) => oldest == 0 || id < oldest ? id : oldest,
+            );
+        if (oldestMessageId == 0 || oldestMessageId == fromMessageId) {
+          break;
+        }
+        fromMessageId = oldestMessageId;
+      }
+    }
+
+    items.sort((left, right) => right.messageId.compareTo(left.messageId));
+    return items;
+  }
+
   Future<void> _ensureChatsAvailable(List<int> channelIds) async {
     final unresolved = channelIds.toSet();
     await _removeAvailableChats(unresolved);
@@ -384,7 +468,7 @@ class TdlibTelegramClient
       await _gateway.send(
         td.DownloadFile(
           fileId: fileId,
-          priority: 24,
+          priority: 32,
           offset: 0,
           limit: 0,
           synchronous: false,
@@ -396,6 +480,55 @@ class TdlibTelegramClient
       // continues to use the synchronous high-priority range request.
       _fullDownloadRequests.remove(fileId);
     }
+  }
+
+  @override
+  Future<Uri?> prepareDirectPlaybackUri(MediaItem item) async {
+    if (item.kind != MediaKind.audio || item.isSplit || item.fileId <= 0) {
+      return null;
+    }
+
+    var currentItem = item;
+    try {
+      currentItem = await refreshMedia(item);
+    } catch (_) {
+      // The cached TDLib file ID is still worth trying when GetMessage is
+      // temporarily unavailable.
+    }
+    if (currentItem.isSplit || currentItem.fileId <= 0) {
+      return null;
+    }
+
+    final fileId = currentItem.fileId;
+    // Do not serialize this whole-file wait behind the range-read lock. If the
+    // user changes songs, clearPlaybackCache must be able to cancel this TDLib
+    // download immediately instead of waiting for a large FLAC file to finish.
+    final response = await _gateway.send(
+      td.DownloadFile(
+        fileId: fileId,
+        priority: 32,
+        offset: 0,
+        limit: 0,
+        synchronous: true,
+      ),
+      timeout: const Duration(minutes: 5),
+    );
+    final file = _extractFile(response);
+    final path = file.localPath;
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+    final localFile = io.File(path);
+    if (!await localFile.exists()) {
+      return null;
+    }
+    final complete = file.isDownloadingCompleted ||
+        (file.downloadedSize >= currentItem.size && currentItem.size > 0);
+    if (!complete) {
+      return null;
+    }
+    _fullDownloadRequests.add(fileId);
+    return Uri.file(path);
   }
 
   @override
@@ -687,7 +820,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.4.8',
+        applicationVersion: '1.4.13',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -786,7 +919,12 @@ class TdlibTelegramClient
       throw AppException(AppErrorCode.telegramApi, message: json['message']?.toString());
     }
     final local = _asMap(json['local']);
-    return _TdFile(localPath: local?['path']?.toString());
+    return _TdFile(
+      localPath: local?['path']?.toString(),
+      isDownloadingCompleted: local?['is_downloading_completed'] == true,
+      downloadedSize:
+          int.tryParse(local?['downloaded_size']?.toString() ?? '') ?? 0,
+    );
   }
 
   MediaPart? _partForRange(MediaItem item, int absoluteStart) {
@@ -973,9 +1111,15 @@ class TdlibTelegramClient
 }
 
 class _TdFile {
-  const _TdFile({this.localPath});
+  const _TdFile({
+    this.localPath,
+    this.isDownloadingCompleted = false,
+    this.downloadedSize = 0,
+  });
 
   final String? localPath;
+  final bool isDownloadingCompleted;
+  final int downloadedSize;
 }
 
 class _ThumbnailCandidate {

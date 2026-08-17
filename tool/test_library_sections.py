@@ -17,6 +17,14 @@ class LibrarySectionsTest(unittest.TestCase):
         self.assertIn('child: Row(', source)
         self.assertIn("'library-section-${section.name}'", source)
 
+    def test_library_sort_control_is_inline_and_shuffle_button_is_removed(self):
+        source = (ROOT / 'lib/src/features/library/presentation/library_screen.dart').read_text()
+        self.assertIn('SegmentedButton<MediaSortOrder>', source)
+        self.assertIn("'library-sort-selector'", source)
+        self.assertNotIn('PopupMenuButton<MediaSortOrder>', source)
+        self.assertNotIn("label: const Text('Shuffle')", source)
+        self.assertNotIn("'library-shuffle'", source)
+
     def test_liked_state_uses_stable_message_identity_and_persists(self):
         media = (ROOT / 'lib/src/features/library/models/media_item.dart').read_text()
         player = (ROOT / 'lib/src/features/player/application/player_controller.dart').read_text()

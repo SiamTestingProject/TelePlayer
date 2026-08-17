@@ -111,6 +111,9 @@ class MediaLibraryController extends ChangeNotifier {
     }
   }
 
+  Future<Uri?> prepareDirectPlaybackUri(MediaItem item) =>
+      _repository.prepareDirectPlaybackUri(item);
+
   Future<Uri> streamUriFor(MediaItem item) => _repository.streamUriFor(item);
 
   Future<void> clearPlaybackCache(MediaItem item) =>

@@ -41,6 +41,18 @@ abstract interface class TelegramClient {
   Future<Uint8List?> loadThumbnail(MediaItem item);
 }
 
+abstract interface class IncrementalMediaScanner {
+  Future<List<MediaItem>> listMediaSince({
+    required List<int> channelIds,
+    required Map<int, int> afterMessageIdByChannel,
+    required void Function(MediaScanProgress progress) onProgress,
+  });
+}
+
+abstract interface class DirectPlaybackFileProvider {
+  Future<Uri?> prepareDirectPlaybackUri(MediaItem item);
+}
+
 abstract interface class EmbeddedArtworkProvider {
   Future<Uint8List?> loadEmbeddedArtwork(MediaItem item);
 }

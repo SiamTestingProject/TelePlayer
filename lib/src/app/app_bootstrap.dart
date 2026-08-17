@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../core/services/local_streaming_server.dart';
@@ -10,6 +12,7 @@ import '../features/auth/data/auth_repository.dart';
 import '../features/library/application/media_library_controller.dart';
 import '../features/library/data/media_repository.dart';
 import '../features/player/application/player_controller.dart';
+import '../features/player/application/system_media_bridge.dart';
 import '../features/settings/application/settings_controller.dart';
 import '../features/settings/data/settings_repository.dart';
 import '../features/update/application/app_update_controller.dart';
@@ -58,7 +61,36 @@ class AppBootstrap {
       ),
       settingsController: settingsController,
     );
-    final playerController = PlayerController(libraryController);
+
+    SystemMediaBridge? systemMediaBridge;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      systemMediaBridge = await AudioService.init<SystemMediaBridge>(
+        builder: SystemMediaBridge.new,
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.siam.teleplayer.playback',
+          androidNotificationChannelName: 'TelePlayer playback',
+          androidNotificationChannelDescription:
+              'Background audio playback and media controls',
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: false,
+          androidResumeOnClick: true,
+          androidNotificationIcon: 'drawable/ic_stat_teleplayer',
+        ),
+      );
+    }
+
+    final playerController = PlayerController(
+      libraryController,
+      systemMediaBridge: systemMediaBridge,
+    );
+    systemMediaBridge?.bindControls(
+      onPlay: playerController.resume,
+      onPause: playerController.pause,
+      onStop: playerController.stopPlayback,
+      onNext: playerController.playNext,
+      onPrevious: playerController.playPrevious,
+      onSeek: playerController.seekTo,
+    );
     await playerController.initializeLibraryPreferences();
     final updateController = AppUpdateController(AppUpdateService());
 

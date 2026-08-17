@@ -21,6 +21,17 @@ class SettingsNavigationAndPlaybackCleanupTest(unittest.TestCase):
         self.assertIn("title: 'Playback'", source)
         self.assertIn("title: 'Updates'", source)
 
+    def test_settings_destination_cards_are_compact(self):
+        source = (
+            ROOT / 'lib/src/features/settings/presentation/settings_screen.dart'
+        ).read_text(encoding='utf-8')
+        self.assertNotIn('const _SettingsHero()', source)
+        self.assertIn('width: 48', source)
+        self.assertIn('height: 48', source)
+        self.assertIn('vertical: 10', source)
+        self.assertIn('maxLines: 1', source)
+        self.assertNotIn("status: 'Auto-clean enabled'", source)
+
     def test_background_activity_settings_are_available(self):
         source = (
             ROOT / 'lib/src/features/settings/presentation/settings_screen.dart'

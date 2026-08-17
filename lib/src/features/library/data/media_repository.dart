@@ -29,6 +29,7 @@ class MediaRepository {
   Future<List<MediaItem>> loadRecent(AppSettings settings) async {
     final configuredChannels = settings.channelIds.toSet();
     final channelIds = configuredChannels.toList(growable: false);
+    final fullyScannedChannels = await _catalogCache.readFullyScannedChannels();
     final cached = (await _catalogCache.readItems())
         .where(
           (item) =>
@@ -50,7 +51,10 @@ class MediaRepository {
     }
     final merged = _mergeByMessage(recent, cached);
     try {
-      await _catalogCache.writeItems(merged);
+      await _catalogCache.writeItems(
+        merged,
+        fullyScannedChannels: fullyScannedChannels.intersection(configuredChannels),
+      );
     } catch (_) {
       // A catalog write failure must not hide an otherwise usable library.
     }
@@ -62,22 +66,86 @@ class MediaRepository {
     required void Function(ChannelCacheProgress progress) onProgress,
     void Function(List<MediaItem> items)? onItemsAvailable,
   }) async {
-    final scannedItems = await _telegramClient.listAllMedia(
-      channelIds: settings.channelIds.toSet().toList(growable: false),
-      onProgress: (progress) {
-        onProgress(
-          ChannelCacheProgress(
-            phase: ChannelCachePhase.scanning,
-            scannedMessages: progress.scannedMessages,
-            mediaCount: progress.mediaCount,
-          ),
-        );
-      },
-    );
-    final items = _deduplicateByMessage(
+    final configuredChannels = settings.channelIds.toSet();
+    final channelIds = configuredChannels.toList(growable: false);
+    final cachedItems = (await _catalogCache.readItems())
+        .where(
+          (item) =>
+              configuredChannels.contains(item.chatId) &&
+              item.kind == MediaKind.audio,
+        )
+        .toList(growable: false);
+    final fullyScannedChannels =
+        await _catalogCache.readFullyScannedChannels();
+
+    final newestCachedMessageId = <int, int>{};
+    for (final item in cachedItems) {
+      final current = newestCachedMessageId[item.chatId] ?? 0;
+      if (item.messageId > current) {
+        newestCachedMessageId[item.chatId] = item.messageId;
+      }
+    }
+
+    final incrementalClient = _telegramClient;
+    final canIncrementallyScan = incrementalClient is IncrementalMediaScanner;
+    final scanAnchors = <int, int>{};
+    for (final channelId in channelIds) {
+      if (fullyScannedChannels.contains(channelId) && canIncrementallyScan) {
+        scanAnchors[channelId] = newestCachedMessageId[channelId] ?? 0;
+      } else {
+        // 0 means scan to the beginning. This happens on a fresh install, for
+        // a newly configured channel, or for a small legacy catalog whose
+        // completeness cannot safely be assumed.
+        scanAnchors[channelId] = 0;
+      }
+    }
+
+    late final List<MediaItem> scannedItems;
+    if (canIncrementallyScan) {
+      scannedItems = await (incrementalClient as IncrementalMediaScanner)
+          .listMediaSince(
+        channelIds: channelIds,
+        afterMessageIdByChannel: scanAnchors,
+        onProgress: (progress) {
+          onProgress(
+            ChannelCacheProgress(
+              phase: ChannelCachePhase.scanning,
+              scannedMessages: progress.scannedMessages,
+              mediaCount: progress.mediaCount,
+            ),
+          );
+        },
+      );
+    } else {
+      // Fallback for alternate TelegramClient implementations used outside the
+      // production TDLib client. It retains the previous full-scan behavior.
+      scannedItems = await _telegramClient.listAllMedia(
+        channelIds: channelIds,
+        onProgress: (progress) {
+          onProgress(
+            ChannelCacheProgress(
+              phase: ChannelCachePhase.scanning,
+              scannedMessages: progress.scannedMessages,
+              mediaCount: progress.mediaCount,
+            ),
+          );
+        },
+      );
+    }
+
+    final scannedAudio = _deduplicateByMessage(
       scannedItems.where((item) => item.kind == MediaKind.audio),
     );
-    await _catalogCache.writeItems(items);
+    final cachedKeys = cachedItems.map((item) => item.messageKey).toSet();
+    final newItems = scannedAudio
+        .where((item) => !cachedKeys.contains(item.messageKey))
+        .toList(growable: false);
+    final items = _mergeByMessage(scannedAudio, cachedItems);
+
+    await _catalogCache.writeItems(
+      items,
+      fullyScannedChannels: configuredChannels,
+    );
     onItemsAvailable?.call(List<MediaItem>.unmodifiable(items));
 
     var completed = 0;
@@ -88,23 +156,23 @@ class MediaRepository {
         phase: ChannelCachePhase.thumbnails,
         mediaCount: items.length,
         completedThumbnails: 0,
-        totalThumbnails: items.length,
+        totalThumbnails: newItems.length,
       ),
     );
 
-    // A song can have no thumbnail in a history response but gain an album
-    // cover after GetMessage refreshes its TDLib audio object. Cache every
-    // song rather than only the items that already advertise a thumbnail.
+    // Existing artwork is intentionally left alone. The Cache button is now an
+    // incremental sync: only songs that were not already present in the local
+    // catalog pay the thumbnail/embedded-artwork download cost.
     Future<void> worker() async {
       while (true) {
         final index = nextIndex;
         nextIndex += 1;
-        if (index >= items.length) {
+        if (index >= newItems.length) {
           return;
         }
         try {
           final artwork = await loadThumbnail(
-            items[index],
+            newItems[index],
             retryRemote: true,
           );
           if (artwork == null || artwork.isEmpty) {
@@ -118,8 +186,6 @@ class MediaRepository {
           }
           failed += 1;
         } catch (_) {
-          // One malformed/unavailable artwork file must not abort a full
-          // channel cache. The song catalog itself is already safely stored.
           failed += 1;
         }
         onProgress(
@@ -127,15 +193,16 @@ class MediaRepository {
             phase: ChannelCachePhase.thumbnails,
             mediaCount: items.length,
             completedThumbnails: completed,
-            totalThumbnails: items.length,
+            totalThumbnails: newItems.length,
             failedThumbnails: failed,
           ),
         );
       }
     }
 
-    final workerCount =
-        items.isEmpty ? 0 : (items.length < 4 ? items.length : 4);
+    final workerCount = newItems.isEmpty
+        ? 0
+        : (newItems.length < 4 ? newItems.length : 4);
     await Future.wait(
       List<Future<void>>.generate(workerCount, (_) => worker()),
     );
@@ -145,7 +212,7 @@ class MediaRepository {
         phase: ChannelCachePhase.complete,
         mediaCount: items.length,
         completedThumbnails: completed,
-        totalThumbnails: items.length,
+        totalThumbnails: newItems.length,
         failedThumbnails: failed,
       ),
     );
@@ -176,6 +243,21 @@ class MediaRepository {
       }
       return null;
     } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Uri?> prepareDirectPlaybackUri(MediaItem item) async {
+    final client = _telegramClient;
+    if (client is! DirectPlaybackFileProvider || item.kind != MediaKind.audio) {
+      return null;
+    }
+    try {
+      return await (client as DirectPlaybackFileProvider)
+          .prepareDirectPlaybackUri(item);
+    } catch (_) {
+      // The localhost stream remains a valid fallback when a full native TDLib
+      // file cannot be prepared in time.
       return null;
     }
   }

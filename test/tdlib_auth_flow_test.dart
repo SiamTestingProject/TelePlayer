@@ -375,6 +375,102 @@ void main() {
     expect(progress.last.scannedMessages, 199);
     expect(progress.last.mediaCount, 199);
   });
+
+  test('incremental media scan stops at the newest cached message boundary', () async {
+    var historyCalls = 0;
+    final gateway = _FakeTdlibGateway(
+      requestHandler: (request) {
+        return switch (request.getConstructor()) {
+          'getChat' => <String, dynamic>{
+              '@type': 'chat',
+              'id': -1001234567890,
+              'title': 'Incremental Music Collection',
+            },
+          'getChatHistory' => () {
+              historyCalls += 1;
+              return <String, dynamic>{
+                '@type': 'messages',
+                'messages': <Map<String, dynamic>>[
+                  _audioMessage(205),
+                  _audioMessage(204),
+                  _audioMessage(203),
+                  _audioMessage(202),
+                  _audioMessage(201),
+                  _audioMessage(200),
+                ],
+              };
+            }(),
+          _ => <String, dynamic>{'@type': 'ok'},
+        };
+      },
+    );
+    final client = TdlibTelegramClient(gateway);
+    final progress = <MediaScanProgress>[];
+    addTearDown(client.close);
+
+    final items = await client.listMediaSince(
+      channelIds: const <int>[-1001234567890],
+      afterMessageIdByChannel: const <int, int>{-1001234567890: 200},
+      onProgress: progress.add,
+    );
+
+    expect(historyCalls, 1);
+    expect(items.map((item) => item.messageId), <int>[205, 204, 203, 202, 201]);
+    expect(progress.last.scannedMessages, 5);
+  });
+
+  test('prepares a completed TDLib file for direct native playback', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-direct-playback-file-test-',
+    );
+    final mediaFile = File('${directory.path}/direct.flac');
+    await mediaFile.writeAsBytes(List<int>.filled(32, 7));
+    final gateway = _FakeTdlibGateway(
+      requestHandler: (request) {
+        return switch (request.getConstructor()) {
+          'getMessage' => _audioMessage(42),
+          'downloadFile' => <String, dynamic>{
+              '@type': 'file',
+              'id': 1042,
+              'size': 42000000,
+              'local': <String, dynamic>{
+                'path': mediaFile.path,
+                'is_downloading_completed': true,
+                'downloaded_size': 42000000,
+              },
+            },
+          _ => <String, dynamic>{'@type': 'ok'},
+        };
+      },
+    );
+    final client = TdlibTelegramClient(gateway);
+    addTearDown(() async {
+      await client.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    const item = MediaItem(
+      id: 'song-42',
+      chatId: -1001234567890,
+      messageId: 42,
+      fileId: 1042,
+      title: 'Track 42',
+      fileName: 'Track 42.flac',
+      mimeType: 'audio/flac',
+      size: 42000000,
+      kind: MediaKind.audio,
+    );
+
+    final uri = await client.prepareDirectPlaybackUri(item);
+
+    expect(uri, isNotNull);
+    expect(uri!.scheme, 'file');
+    expect(File.fromUri(uri).path, mediaFile.path);
+    expect(gateway.requestTypes, <String>['getMessage', 'downloadFile']);
+  });
+
   test('playback cache cleanup cancels download and deletes TDLib file', () async {
     final gateway = _FakeTdlibGateway(
       requestHandler: (request) {

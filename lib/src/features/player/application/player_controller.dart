@@ -5,20 +5,24 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as audio;
-import 'package:just_audio_background/just_audio_background.dart' as background;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/errors/app_exception.dart';
 import '../../library/application/media_library_controller.dart';
 import '../../library/models/media_item.dart';
+import 'system_media_bridge.dart';
 
 class PlayerController extends ChangeNotifier {
-  PlayerController(this._libraryController);
+  PlayerController(
+    this._libraryController, {
+    SystemMediaBridge? systemMediaBridge,
+  }) : _systemMediaBridge = systemMediaBridge;
 
   static const int _maxRecoveryAttempts = 6;
   static const Duration _bufferingWatchdogDelay = Duration(seconds: 18);
 
   final MediaLibraryController _libraryController;
+  final SystemMediaBridge? _systemMediaBridge;
   final Set<String> _favoriteKeys = <String>{};
   final Random _random = Random();
   final List<StreamSubscription<dynamic>> _playerSubscriptions =
@@ -125,18 +129,8 @@ class PlayerController extends ChangeNotifier {
       if (generation != _openGeneration || _disposed) {
         return;
       }
-      final source = audio.AudioSource.uri(
-        uri,
-        tag: background.MediaItem(
-          id: item.id,
-          album: item.album ?? 'Telegram Mix',
-          title: item.title,
-          artist: item.artist,
-          duration: item.durationSeconds == null
-              ? null
-              : Duration(seconds: item.durationSeconds!),
-        ),
-      );
+      _publishSystemMediaItem(item, generation);
+      final source = audio.AudioSource.uri(uri);
       await player
           .setAudioSources(
             <audio.AudioSource>[source],
@@ -152,6 +146,7 @@ class PlayerController extends ChangeNotifier {
       );
       _recoveryBaseline = resumeAt;
       unawaited(_startPlayback(player, generation));
+      unawaited(_upgradeToDirectPlaybackFile(item, generation));
     } on TimeoutException catch (error) {
       if (generation == _openGeneration) {
         _error = AppException(
@@ -186,6 +181,92 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  void _publishSystemMediaItem(MediaItem item, int generation) {
+    final bridge = _systemMediaBridge;
+    if (bridge == null) {
+      return;
+    }
+    final duration = item.durationSeconds == null
+        ? null
+        : Duration(seconds: item.durationSeconds!);
+    bridge.publishMediaItem(
+      id: item.messageKey,
+      title: item.title,
+      artist: item.artist,
+      album: item.album ?? 'Telegram Mix',
+      duration: duration,
+    );
+    unawaited(_publishSystemArtwork(item, generation, duration));
+  }
+
+  Future<void> _publishSystemArtwork(
+    MediaItem item,
+    int generation,
+    Duration? duration,
+  ) async {
+    final bridge = _systemMediaBridge;
+    if (bridge == null) {
+      return;
+    }
+    try {
+      final bytes = await _libraryController.thumbnailFor(
+        item,
+        highQuality: true,
+      );
+      if (bytes == null || bytes.isEmpty || generation != _openGeneration) {
+        return;
+      }
+      final cache = await getTemporaryDirectory();
+      final directory = Directory(
+        '${cache.path}${Platform.pathSeparator}teleplayer-system-artwork',
+      );
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}'
+        '${item.chatId}_${item.messageId}.${_artworkExtension(bytes)}',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      if (generation != _openGeneration || _item?.messageKey != item.messageKey) {
+        return;
+      }
+      bridge.publishMediaItem(
+        id: item.messageKey,
+        title: item.title,
+        artist: item.artist,
+        album: item.album ?? 'Telegram Mix',
+        duration: duration,
+        artUri: Uri.file(file.path),
+      );
+    } catch (_) {
+      // System artwork is optional. Metadata and media controls remain active
+      // even when a cover cannot be materialized locally.
+    }
+  }
+
+  String _artworkExtension(List<int> bytes) {
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4e &&
+        bytes[3] == 0x47) {
+      return 'png';
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return 'webp';
+    }
+    return 'jpg';
+  }
+
   Future<void> _startPlayback(
     audio.AudioPlayer player,
     int generation,
@@ -201,7 +282,76 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  Future<void> _upgradeToDirectPlaybackFile(
+    MediaItem item,
+    int generation,
+  ) async {
+    final directUri = await _libraryController.prepareDirectPlaybackUri(item);
+    if (directUri == null || directUri.scheme != 'file') {
+      return;
+    }
+    if (_disposed ||
+        generation != _openGeneration ||
+        _item?.messageKey != item.messageKey) {
+      return;
+    }
+
+    final localFile = File.fromUri(directUri);
+    if (!await localFile.exists()) {
+      return;
+    }
+
+    final player = _audioPlayer;
+    if (player == null) {
+      return;
+    }
+    final wasPlaying = player.playing;
+    final resumeAt = player.position;
+    try {
+      // The initial localhost stream gives instant startup, but a Dart HTTP
+      // server is vulnerable to aggressive OEM background throttling. As soon
+      // as TDLib has the complete file, hand playback to ExoPlayer as file://
+      // so the rest of the track is native and no longer depends on Flutter's
+      // UI isolate staying schedulable in the background.
+      await player
+          .setAudioSources(
+            <audio.AudioSource>[audio.AudioSource.uri(directUri)],
+            initialIndex: 0,
+            initialPosition: resumeAt,
+          )
+          .timeout(const Duration(seconds: 20));
+      if (_disposed ||
+          generation != _openGeneration ||
+          _item?.messageKey != item.messageKey) {
+        return;
+      }
+      await player.setLoopMode(
+        _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
+      );
+      if (wasPlaying) {
+        unawaited(_startPlayback(player, generation));
+      }
+      _systemMediaBridge?.refreshPlaybackState();
+      _notify();
+    } on TimeoutException {
+      // Keep the original stream if the native file handoff takes too long.
+    } on audio.PlayerInterruptedException {
+      // A user-initiated song change won the race with this background handoff.
+    } catch (_) {
+      // Direct-file playback is a reliability upgrade, never a reason to stop
+      // an otherwise working stream.
+    }
+  }
+
   Future<void> togglePlay() async {
+    if (isPlaying) {
+      await pause();
+    } else {
+      await resume();
+    }
+  }
+
+  Future<void> resume() async {
     final player = _audioPlayer;
     if (player == null || player.processingState == audio.ProcessingState.idle) {
       final currentItem = _item;
@@ -210,14 +360,39 @@ class PlayerController extends ChangeNotifier {
       }
       return;
     }
-    if (player.playing) {
-      await player.pause();
-    } else {
-      if (player.processingState == audio.ProcessingState.completed) {
-        await player.seek(Duration.zero);
-      }
-      unawaited(_startPlayback(player, _openGeneration));
+    if (player.processingState == audio.ProcessingState.completed) {
+      await player.seek(Duration.zero);
     }
+    unawaited(_startPlayback(player, _openGeneration));
+    _notify();
+  }
+
+  Future<void> pause() async {
+    await _audioPlayer?.pause();
+    _notify();
+  }
+
+  Future<void> stopPlayback() async {
+    final currentItem = _item;
+    await _audioPlayer?.stop();
+    if (currentItem != null) {
+      await _clearPlaybackCache(currentItem);
+    }
+    _notify();
+  }
+
+  Future<void> seekTo(Duration target) async {
+    final player = _audioPlayer;
+    if (player == null) {
+      return;
+    }
+    final maxDuration = duration;
+    final clamped = maxDuration > Duration.zero && target > maxDuration
+        ? maxDuration
+        : target < Duration.zero
+            ? Duration.zero
+            : target;
+    await player.seek(clamped);
     _notify();
   }
 
@@ -311,19 +486,7 @@ class PlayerController extends ChangeNotifier {
     if (existing != null) {
       return existing;
     }
-    final player = audio.AudioPlayer(
-      useLazyPreparation: false,
-      audioLoadConfiguration: const audio.AudioLoadConfiguration(
-        androidLoadControl: audio.AndroidLoadControl(
-          minBufferDuration: Duration(seconds: 60),
-          maxBufferDuration: Duration(minutes: 2),
-          bufferForPlaybackDuration: Duration(seconds: 2),
-          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 8),
-          prioritizeTimeOverSizeThresholds: true,
-          backBufferDuration: Duration(seconds: 20),
-        ),
-      ),
-    );
+    final player = _systemMediaBridge?.player ?? createTelePlayerAudioPlayer();
     _audioPlayer = player;
     _playerSubscriptions
       ..add(player.playerStateStream.listen(_handlePlayerState))
@@ -531,7 +694,12 @@ class PlayerController extends ChangeNotifier {
     _playerSubscriptions.clear();
     final player = _audioPlayer;
     _audioPlayer = null;
-    unawaited(player?.dispose());
+    final bridge = _systemMediaBridge;
+    if (bridge != null && identical(player, bridge.player)) {
+      unawaited(bridge.disposeBridge());
+    } else {
+      unawaited(player?.dispose());
+    }
     super.dispose();
   }
 }

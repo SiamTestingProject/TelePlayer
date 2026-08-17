@@ -30,6 +30,17 @@ ANDROID_BACKGROUND_AUDIO_PERMISSIONS = (
 ANDROID_CLEARTEXT_ATTRIBUTE = 'android:usesCleartextTraffic="true"'
 ANDROID_TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"'
 ANDROID_AUDIO_ACTIVITY = "com.ryanheise.audioservice.AudioServiceActivity"
+ANDROID_NOTIFICATION_ICON_NAME = "ic_stat_teleplayer"
+ANDROID_NOTIFICATION_ICON_XML = """<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3v10.55A4,4 0,1 0,14,17V7h4V3h-6z" />
+</vector>
+"""
 ANDROID_AUDIO_COMPONENTS = """        <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
@@ -142,6 +153,12 @@ def _configure_android_application_id(root: Path) -> None:
 
 def configure_android(root: Path) -> None:
     _configure_android_application_id(root)
+    drawable_dir = root / "android" / "app" / "src" / "main" / "res" / "drawable"
+    drawable_dir.mkdir(parents=True, exist_ok=True)
+    (drawable_dir / f"{ANDROID_NOTIFICATION_ICON_NAME}.xml").write_text(
+        ANDROID_NOTIFICATION_ICON_XML,
+        encoding="utf-8",
+    )
     manifest = root / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
     _replace(
         manifest,

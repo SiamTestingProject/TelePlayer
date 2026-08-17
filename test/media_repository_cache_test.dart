@@ -305,6 +305,63 @@ void main() {
     expect(persisted.single.fileId, 91);
   });
 
+
+  test('subsequent cache sync downloads artwork only for new Telegram songs', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-incremental-cache-test-',
+    );
+    final telegram = _IncrementalTelegramClient();
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    const settings = AppSettings(
+      apiId: 1,
+      apiHash: 'test-hash',
+      channelIds: <int>[-1001],
+      cacheLimitMb: 4096,
+      preferWifi: true,
+    );
+    await repository.cacheAll(settings, onProgress: (_) {});
+    expect(telegram.thumbnailAttempts, 1);
+    expect(telegram.lastAnchors[-1001], 0);
+
+    telegram.items.add(
+      const MediaItem(
+        id: '-1001:21:4',
+        chatId: -1001,
+        messageId: 21,
+        fileId: 4,
+        title: 'New Track',
+        fileName: 'new-track.mp3',
+        mimeType: 'audio/mpeg',
+        size: 120,
+        kind: MediaKind.audio,
+        thumbnailFileId: 5,
+      ),
+    );
+    final progress = <ChannelCacheProgress>[];
+    final items = await repository.cacheAll(settings, onProgress: progress.add);
+
+    expect(items, hasLength(2));
+    expect(telegram.lastAnchors[-1001], 20);
+    expect(telegram.thumbnailAttempts, 2);
+    expect(progress.last.totalThumbnails, 1);
+    expect(await cache.readFullyScannedChannels(), contains(-1001));
+  });
+
   test('excludes Telegram video messages from the cached song library', () async {
     final directory = await Directory.systemTemp.createTemp(
       'teleplayer-audio-only-cache-test-',
@@ -355,6 +412,43 @@ void main() {
     expect(items, hasLength(1));
     expect(items.single.kind, MediaKind.audio);
   });
+}
+
+
+class _IncrementalTelegramClient extends _ThumbnailFailureTelegramClient
+    implements IncrementalMediaScanner {
+  _IncrementalTelegramClient();
+
+  Map<int, int> lastAnchors = <int, int>{};
+
+  @override
+  Future<List<MediaItem>> listMediaSince({
+    required List<int> channelIds,
+    required Map<int, int> afterMessageIdByChannel,
+    required void Function(MediaScanProgress progress) onProgress,
+  }) async {
+    lastAnchors = Map<int, int>.from(afterMessageIdByChannel);
+    final result = items
+        .where(
+          (item) =>
+              channelIds.contains(item.chatId) &&
+              item.messageId > (afterMessageIdByChannel[item.chatId] ?? 0),
+        )
+        .toList(growable: false);
+    onProgress(
+      MediaScanProgress(
+        scannedMessages: result.length,
+        mediaCount: result.length,
+      ),
+    );
+    return result;
+  }
+
+  @override
+  Future<Uint8List?> loadThumbnail(MediaItem item) async {
+    thumbnailAttempts += 1;
+    return Uint8List.fromList(<int>[1, 2, 3, 4]);
+  }
 }
 
 class _EmbeddedArtworkTelegramClient extends _ThumbnailFailureTelegramClient

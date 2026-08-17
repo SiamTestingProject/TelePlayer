@@ -124,6 +124,14 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 1,
             )
             self.assertEqual(manifest_text.count('xmlns:tools='), 1)
+            notification_icon = (
+                root / "android/app/src/main/res/drawable/ic_stat_teleplayer.xml"
+            )
+            self.assertTrue(notification_icon.is_file())
+            self.assertIn(
+                'android:fillColor="#FFFFFFFF"',
+                notification_icon.read_text(),
+            )
 
     def test_configures_windows_product_and_binary_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

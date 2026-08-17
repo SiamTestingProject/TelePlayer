@@ -31,7 +31,7 @@ class SettingsScreen extends StatelessWidget {
         child: SafeArea(
           child: Center(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: <Widget>[
                 Center(
                   child: ConstrainedBox(
@@ -46,9 +46,7 @@ class SettingsScreen extends StatelessWidget {
                                 letterSpacing: 0,
                               ),
                         ),
-                        const SizedBox(height: 18),
-                        const _SettingsHero(),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 16),
                         if (settingsController.error != null) ...<Widget>[
                           ErrorPanel(error: settingsController.error!),
                           const SizedBox(height: 16),
@@ -57,58 +55,47 @@ class SettingsScreen extends StatelessWidget {
                           icon: Icons.key_rounded,
                           title: 'Telegram',
                           subtitle: 'Account, API credentials and channel access',
-                          status: settings.hasTelegramConfiguration
-                              ? '${settings.channelIds.length} channel${settings.channelIds.length == 1 ? '' : 's'}'
-                              : 'Setup required',
                           onTap: () => _open(
                             context,
                             TelegramSettingsPage(onSaved: onSaved),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 4),
                         _SettingsDestinationCard(
                           icon: Icons.tune_rounded,
                           title: 'Playback',
                           subtitle: 'Streaming, network and temporary storage',
-                          status: 'Auto-clean enabled',
                           onTap: () => _open(
                             context,
                             const PlaybackSettingsPage(),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 4),
                         _SettingsDestinationCard(
                           icon: Icons.battery_saver_rounded,
                           title: 'Background activity',
                           subtitle: 'Battery optimization and uninterrupted playback',
-                          status: defaultTargetPlatform == TargetPlatform.android
-                              ? 'Recommended on Android'
-                              : 'Not required',
                           onTap: () => _open(
                             context,
                             const BackgroundActivitySettingsPage(),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 4),
                         _SettingsDestinationCard(
                           icon: Icons.system_update_alt_rounded,
                           title: 'Updates',
                           subtitle: 'GitHub release checks and downloads',
-                          status: _updateStatus(scope.updateController),
                           onTap: () => _open(
                             context,
                             const UpdatesSettingsPage(),
                           ),
                         ),
                         if (_showWindowsTdjsonPath) ...<Widget>[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 4),
                           _SettingsDestinationCard(
                             icon: Icons.desktop_windows_rounded,
                             title: 'Windows',
                             subtitle: 'Local TDLib runtime configuration',
-                            status: settings.windowsTdjsonPath?.trim().isNotEmpty == true
-                                ? 'Custom runtime'
-                                : 'Automatic',
                             onTap: () => _open(
                               context,
                               WindowsSettingsPage(onSaved: onSaved),
@@ -135,16 +122,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  String _updateStatus(AppUpdateController controller) {
-    return switch (controller.status) {
-      AppUpdateStatus.checking => 'Checking…',
-      AppUpdateStatus.upToDate => 'Up to date',
-      AppUpdateStatus.updateAvailable => 'Update available',
-      AppUpdateStatus.error => 'Check failed',
-      AppUpdateStatus.opening => 'Opening update…',
-      AppUpdateStatus.idle => 'Ready',
-    };
-  }
 }
 
 class TelegramSettingsPage extends StatefulWidget {
@@ -814,14 +791,12 @@ class _SettingsDestinationCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.status,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
-  final String status;
   final VoidCallback onTap;
 
   @override
@@ -829,122 +804,59 @@ class _SettingsDestinationCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: colors.surfaceContainer.withValues(alpha: 0.90),
-      borderRadius: BorderRadius.circular(30),
+      borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: <Widget>[
               Container(
-                width: 54,
-                height: 54,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: colors.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: colors.onPrimaryContainer, size: 29),
+                child: Icon(icon, color: colors.onPrimaryContainer, size: 25),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
                             letterSpacing: 0,
                           ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: colors.onSurfaceVariant,
-                          ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      status,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w800,
                           ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 22,
+                color: colors.onSurfaceVariant,
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SettingsHero extends StatelessWidget {
-  const _SettingsHero();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(36),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            colors.primaryContainer,
-            colors.secondaryContainer.withValues(alpha: 0.86),
-            colors.tertiaryContainer.withValues(alpha: 0.68),
-          ],
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 74,
-            height: 74,
-            decoration: BoxDecoration(
-              color: colors.surface.withValues(alpha: 0.52),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Icon(
-              Icons.equalizer_rounded,
-              size: 42,
-              color: colors.primary,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'TelePlayer',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: colors.onPrimaryContainer,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
-                      ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Telegram music, tuned your way',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: colors.onPrimaryContainer.withValues(alpha: 0.76),
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
