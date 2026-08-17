@@ -22,7 +22,6 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final settingsController = scope.settingsController;
-    final settings = settingsController.settings;
     final colors = Theme.of(context).colorScheme;
 
     return Scaffold(

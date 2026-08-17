@@ -118,6 +118,10 @@ jobs:
           SAFE_REF="${SAFE_REF// /-}"
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             ARTIFACT_REF="${SAFE_REF}"
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            APP_VERSION="$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)(\+[0-9]+)?[[:space:]]*$/\1/p' pubspec.yaml | head -n1)"
+            test -n "$APP_VERSION" || { echo "Could not read app version from pubspec.yaml"; exit 1; }
+            ARTIFACT_REF="v${APP_VERSION}"
           else
             ARTIFACT_REF="ci-${SAFE_REF}-${GITHUB_SHA::7}"
           fi
@@ -232,6 +236,15 @@ jobs:
           $sha = '${{ github.sha }}'
           if ('${{ github.ref_type }}' -eq 'tag') {
             $artifactRef = $safeRef
+          } elseif ($rawRef -eq 'main') {
+            $mainVersionMatch = [regex]::Match(
+              (Get-Content pubspec.yaml -Raw),
+              '(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+[0-9]+)?\s*$'
+            )
+            if (-not $mainVersionMatch.Success) {
+              throw "A numeric Flutter version was not found in pubspec.yaml"
+            }
+            $artifactRef = "v$($mainVersionMatch.Groups[1].Value)"
           } else {
             $artifactRef = "ci-$safeRef-$($sha.Substring(0, 7))"
           }
@@ -331,6 +344,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Select release name and tag
         shell: bash
         env:
@@ -345,6 +361,12 @@ jobs:
           elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             RELEASE_TAG="$GITHUB_REF_NAME"
             RELEASE_NAME="$APP_NAME $GITHUB_REF_NAME"
+            RELEASE_PRERELEASE="false"
+          elif [[ "$GITHUB_REF_NAME" == "main" ]]; then
+            APP_VERSION="$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)(\+[0-9]+)?[[:space:]]*$/\1/p' pubspec.yaml | head -n1)"
+            test -n "$APP_VERSION" || { echo "Could not read app version from pubspec.yaml"; exit 1; }
+            RELEASE_TAG="v$APP_VERSION"
+            RELEASE_NAME="$APP_NAME v$APP_VERSION"
             RELEASE_PRERELEASE="false"
           else
             RELEASE_TAG="build-$GITHUB_RUN_NUMBER"

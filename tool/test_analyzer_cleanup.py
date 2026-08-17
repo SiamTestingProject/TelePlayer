@@ -15,5 +15,21 @@ class AnalyzerCleanupTest(unittest.TestCase):
         self.assertIn("builder: (_, _) => CustomPaint(", source)
         self.assertNotIn("builder: (_, __) => CustomPaint(", source)
 
+    def test_audio_service_config_does_not_violate_const_assertion(self):
+        source = (ROOT / "lib/src/app/app_bootstrap.dart").read_text(encoding="utf-8")
+        self.assertIn("androidNotificationOngoing: false", source)
+        self.assertIn("androidStopForegroundOnPause: false", source)
+        self.assertNotIn(
+            "androidNotificationOngoing: true,\n          androidStopForegroundOnPause: false",
+            source,
+        )
+
+    def test_settings_screen_has_no_unused_settings_local(self):
+        source = (
+            ROOT / "lib/src/features/settings/presentation/settings_screen.dart"
+        ).read_text(encoding="utf-8")
+        main_build_prefix = source.split("class TelegramSettingsPage", 1)[0]
+        self.assertNotIn("final settings = settingsController.settings;", main_build_prefix)
+
 if __name__ == "__main__":
     unittest.main()

@@ -820,7 +820,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.4.13',
+        applicationVersion: '1.4.14',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),

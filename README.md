@@ -90,8 +90,9 @@ platform asset is missing, it opens the GitHub Release page instead.
 
 If GitHub has no public stable release yet, the updater reports that normal
 state instead of showing the Releases API's `404` response as an app error.
-Automatic `build-*` prereleases remain available on GitHub but are intentionally
-ignored by the in-app stable updater.
+Pushes to `main` create normal stable semantic-version releases that the in-app
+updater can discover. Non-main `build-*` prereleases remain available on GitHub
+but are intentionally ignored by the stable updater.
 
 The release repository is embedded at build time with
 `--dart-define=GITHUB_REPOSITORY=owner/repository`. GitHub Actions supplies this
@@ -102,21 +103,22 @@ components and required permissions from `tool/configure_app_identity.py`.
 
 Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
-publishes them together in a GitHub prerelease tagged `build-<run number>`.
-
-Push a version tag such as `v1.4.13` to publish a normal GitHub Release instead.
+publishes them together. A push to `main` creates or updates the stable semantic
+release for the version in `pubspec.yaml` (for example `v1.4.14`). Non-main
+branches use `build-<run number>` prereleases. You can also push a matching
+version tag such as `v1.4.14` explicitly.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.4.13.apk`
-- `TelePlayer-v1.4.13-arm64.apk`
-- `TelePlayer-v1.4.13-armeabi-v7a.apk`
-- `TelePlayer-v1.4.13-x86_64.apk`
-- `TelePlayer-v1.4.13-aab.aab`
-- `TelePlayer-v1.4.13-Setup.exe`
-- `TelePlayer-v1.4.13-windows-x64.zip`
+- `TelePlayer-v1.4.14.apk`
+- `TelePlayer-v1.4.14-arm64.apk`
+- `TelePlayer-v1.4.14-armeabi-v7a.apk`
+- `TelePlayer-v1.4.14-x86_64.apk`
+- `TelePlayer-v1.4.14-aab.aab`
+- `TelePlayer-v1.4.14-Setup.exe`
+- `TelePlayer-v1.4.14-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

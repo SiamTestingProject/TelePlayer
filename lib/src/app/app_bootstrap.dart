@@ -71,7 +71,11 @@ class AppBootstrap {
           androidNotificationChannelName: 'TelePlayer playback',
           androidNotificationChannelDescription:
               'Background audio playback and media controls',
-          androidNotificationOngoing: true,
+          // Keep the media service in the foreground when playback is paused.
+          // audio_service requires androidNotificationOngoing to be false when
+          // androidStopForegroundOnPause is false. While audio is playing, the
+          // foreground-service notification remains active regardless.
+          androidNotificationOngoing: false,
           androidStopForegroundOnPause: false,
           androidResumeOnClick: true,
           androidNotificationIcon: 'drawable/ic_stat_teleplayer',
