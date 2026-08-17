@@ -17,6 +17,8 @@ class MediaItem {
     required this.kind,
     this.dateEpochSeconds = 0,
     this.artist,
+    this.album,
+    this.sourceName,
     this.durationSeconds,
     this.thumbnailFileId,
     this.inlineThumbnailBase64,
@@ -35,6 +37,8 @@ class MediaItem {
   final MediaKind kind;
   final int dateEpochSeconds;
   final String? artist;
+  final String? album;
+  final String? sourceName;
   final int? durationSeconds;
   final int? thumbnailFileId;
   final String? inlineThumbnailBase64;
@@ -42,6 +46,7 @@ class MediaItem {
   final List<MediaPart> parts;
 
   String get readableSize => FileNameUtils.readableBytes(size);
+  String get messageKey => '$chatId:$messageId';
   bool get isSplit => parts.isNotEmpty;
   bool get hasThumbnail =>
       thumbnailFileId != null ||
@@ -65,6 +70,8 @@ class MediaItem {
       dateEpochSeconds:
           int.tryParse(json['dateEpochSeconds']?.toString() ?? '') ?? 0,
       artist: json['artist']?.toString(),
+      album: json['album']?.toString(),
+      sourceName: json['sourceName']?.toString(),
       durationSeconds:
           int.tryParse(json['durationSeconds']?.toString() ?? ''),
       thumbnailFileId:
@@ -90,6 +97,8 @@ class MediaItem {
         'kind': kind.name,
         'dateEpochSeconds': dateEpochSeconds,
         if (artist != null) 'artist': artist,
+        if (album != null) 'album': album,
+        if (sourceName != null) 'sourceName': sourceName,
         if (durationSeconds != null) 'durationSeconds': durationSeconds,
         if (thumbnailFileId != null) 'thumbnailFileId': thumbnailFileId,
         if (inlineThumbnailBase64 != null && inlineThumbnailBase64!.isNotEmpty)
@@ -115,6 +124,8 @@ class MediaItem {
       kind: kind,
       dateEpochSeconds: dateEpochSeconds,
       artist: artist,
+      album: album,
+      sourceName: sourceName,
       durationSeconds: durationSeconds,
       thumbnailFileId: thumbnailFileId,
       inlineThumbnailBase64: inlineThumbnailBase64,

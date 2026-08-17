@@ -27,11 +27,11 @@ class ChannelCatalogCache {
       if (json is! Map || json['items'] is! List) {
         return const <MediaItem>[];
       }
-      return (json['items'] as List<dynamic>)
+      final items = (json['items'] as List<dynamic>)
           .whereType<Map>()
           .map((item) => MediaItem.fromJson(Map<String, dynamic>.from(item)))
-          .where((item) => item.id.isNotEmpty && item.fileId > 0 && item.size > 0)
-          .toList(growable: false);
+          .where((item) => item.id.isNotEmpty && item.fileId > 0 && item.size > 0);
+      return _deduplicateByMessage(items);
     } on FormatException {
       return const <MediaItem>[];
     } on FileSystemException {
@@ -41,12 +41,41 @@ class ChannelCatalogCache {
 
   Future<void> writeItems(List<MediaItem> items) async {
     final file = await _catalogFile();
+    final normalizedItems = _deduplicateByMessage(items);
     final payload = <String, dynamic>{
-      'version': 1,
+      'version': 2,
       'savedAt': DateTime.now().toUtc().toIso8601String(),
-      'items': items.map((item) => item.toJson()).toList(growable: false),
+      'items': normalizedItems
+          .map((item) => item.toJson())
+          .toList(growable: false),
     };
     await file.writeAsString(jsonEncode(payload), flush: true);
+  }
+
+
+  List<MediaItem> _deduplicateByMessage(Iterable<MediaItem> source) {
+    final byMessage = <String, MediaItem>{};
+    for (final item in source) {
+      final key = '${item.chatId}:${item.messageId}';
+      final existing = byMessage[key];
+      if (existing == null || _prefer(item, existing)) {
+        byMessage[key] = item;
+      }
+    }
+    final items = byMessage.values.toList()
+      ..sort((left, right) => right.messageId.compareTo(left.messageId));
+    return items;
+  }
+
+  bool _prefer(MediaItem candidate, MediaItem existing) {
+    if (candidate.hasThumbnail != existing.hasThumbnail) {
+      return candidate.hasThumbnail;
+    }
+    if ((candidate.localPath?.isNotEmpty ?? false) !=
+        (existing.localPath?.isNotEmpty ?? false)) {
+      return candidate.localPath?.isNotEmpty ?? false;
+    }
+    return candidate.fileId >= existing.fileId;
   }
 
   Future<Uint8List?> readThumbnail(int fileId) async {

@@ -375,6 +375,39 @@ void main() {
     expect(progress.last.scannedMessages, 199);
     expect(progress.last.mediaCount, 199);
   });
+  test('playback cache cleanup cancels download and deletes TDLib file', () async {
+    final gateway = _FakeTdlibGateway(
+      requestHandler: (request) {
+        return switch (request.getConstructor()) {
+          'getMessage' => _audioMessage(42),
+          'cancelDownloadFile' || 'deleteFile' => <String, dynamic>{'@type': 'ok'},
+          _ => <String, dynamic>{'@type': 'ok'},
+        };
+      },
+    );
+    final client = TdlibTelegramClient(gateway);
+    addTearDown(client.close);
+
+    const item = MediaItem(
+      id: 'song-42',
+      chatId: -1001234567890,
+      messageId: 42,
+      fileId: 1042,
+      title: 'Track 42',
+      fileName: 'Track 42.flac',
+      mimeType: 'audio/flac',
+      size: 42000000,
+      kind: MediaKind.audio,
+    );
+
+    await client.clearPlaybackCache(item);
+
+    expect(
+      gateway.requestTypes,
+      <String>['getMessage', 'cancelDownloadFile', 'deleteFile'],
+    );
+  });
+
 }
 
 Map<String, dynamic> _audioMessage(int id) => <String, dynamic>{

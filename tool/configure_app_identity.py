@@ -13,6 +13,9 @@ WINDOWS_BINARY_NAME = "teleplayer"
 ANDROID_INTERNET_PERMISSION = (
     '<uses-permission android:name="android.permission.INTERNET" />'
 )
+ANDROID_NOTIFICATION_PERMISSION = (
+    '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'
+)
 ANDROID_BACKGROUND_AUDIO_PERMISSIONS = (
     '<uses-permission android:name="android.permission.WAKE_LOCK" />',
     '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
@@ -75,6 +78,7 @@ def configure_android(root: Path) -> None:
         original = updated
     permissions = (
         ANDROID_INTERNET_PERMISSION,
+        ANDROID_NOTIFICATION_PERMISSION,
         *ANDROID_BACKGROUND_AUDIO_PERMISSIONS,
     )
     for permission in permissions:

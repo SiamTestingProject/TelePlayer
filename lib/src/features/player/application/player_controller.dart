@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as audio;
 import 'package:just_audio_background/just_audio_background.dart' as background;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/errors/app_exception.dart';
 import '../../library/application/media_library_controller.dart';
@@ -16,7 +19,7 @@ class PlayerController extends ChangeNotifier {
   static const Duration _bufferingWatchdogDelay = Duration(seconds: 18);
 
   final MediaLibraryController _libraryController;
-  final Set<String> _favoriteIds = <String>{};
+  final Set<String> _favoriteKeys = <String>{};
   final Random _random = Random();
   final List<StreamSubscription<dynamic>> _playerSubscriptions =
       <StreamSubscription<dynamic>>[];
@@ -56,7 +59,33 @@ class PlayerController extends ChangeNotifier {
 
   bool get shuffleEnabled => _shuffleEnabled;
   bool get repeatEnabled => _repeatEnabled;
-  bool get isFavorite => _item != null && _favoriteIds.contains(_item!.id);
+  bool get isFavorite => _item != null && isFavoriteItem(_item!);
+
+  bool isFavoriteItem(MediaItem item) => _favoriteKeys.contains(item.messageKey);
+
+  Future<void> initializeLibraryPreferences() async {
+    try {
+      final file = await _favoritesFile();
+      if (!await file.exists()) {
+        return;
+      }
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! List) {
+        return;
+      }
+      _favoriteKeys
+        ..clear()
+        ..addAll(
+          decoded
+              .map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty),
+        );
+      _notify();
+    } catch (_) {
+      // Favorites are optional UI state; a damaged preference file must not
+      // prevent playback from starting.
+    }
+  }
 
   Future<void> open(MediaItem item) {
     if (item.kind != MediaKind.audio) {
@@ -78,6 +107,7 @@ class PlayerController extends ChangeNotifier {
     Duration resumeAt = Duration.zero,
   }) async {
     final generation = ++_openGeneration;
+    final previousItem = _item;
     _cancelBufferingWatchdog();
     _isOpening = true;
     _error = null;
@@ -87,6 +117,10 @@ class PlayerController extends ChangeNotifier {
     final player = _ensurePlayer();
     try {
       await player.stop();
+      if (previousItem != null &&
+          previousItem.messageKey != item.messageKey) {
+        unawaited(_clearPlaybackCache(previousItem));
+      }
       final uri = await _libraryController.streamUriFor(item);
       if (generation != _openGeneration || _disposed) {
         return;
@@ -95,7 +129,7 @@ class PlayerController extends ChangeNotifier {
         uri,
         tag: background.MediaItem(
           id: item.id,
-          album: 'Telegram Mix',
+          album: item.album ?? 'Telegram Mix',
           title: item.title,
           artist: item.artist,
           duration: item.durationSeconds == null
@@ -237,10 +271,39 @@ class PlayerController extends ChangeNotifier {
     if (currentItem == null) {
       return;
     }
-    if (!_favoriteIds.add(currentItem.id)) {
-      _favoriteIds.remove(currentItem.id);
+    toggleFavoriteFor(currentItem);
+  }
+
+  void toggleFavoriteFor(MediaItem item) {
+    final key = item.messageKey;
+    if (!_favoriteKeys.add(key)) {
+      _favoriteKeys.remove(key);
     }
     _notify();
+    unawaited(_saveFavorites());
+  }
+
+  Future<File> _favoritesFile() async {
+    final support = await getApplicationSupportDirectory();
+    final directory = Directory(
+      '${support.path}${Platform.pathSeparator}teleplayer-preferences',
+    );
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    return File(
+      '${directory.path}${Platform.pathSeparator}favorites.json',
+    );
+  }
+
+  Future<void> _saveFavorites() async {
+    try {
+      final file = await _favoritesFile();
+      final sorted = _favoriteKeys.toList(growable: false)..sort();
+      await file.writeAsString(jsonEncode(sorted), flush: true);
+    } catch (_) {
+      // Keep the in-memory favorite state even if local persistence fails.
+    }
   }
 
   audio.AudioPlayer _ensurePlayer() {
@@ -308,12 +371,27 @@ class PlayerController extends ChangeNotifier {
         !_repeatEnabled &&
         !_isAdvancing) {
       _isAdvancing = true;
+      final completedItem = _item;
       unawaited(
-        playNext().whenComplete(() {
+        _advanceAfterCompletion(completedItem).whenComplete(() {
           _isAdvancing = false;
         }),
       );
     }
+  }
+
+  Future<void> _advanceAfterCompletion(MediaItem? completedItem) async {
+    if (completedItem == null) {
+      return;
+    }
+    final next = _adjacentItem(1);
+    if (next == null || next.messageKey == completedItem.messageKey) {
+      await _audioPlayer?.stop();
+      await _clearPlaybackCache(completedItem);
+      _notify();
+      return;
+    }
+    await open(next);
   }
 
   void _handlePosition(Duration currentPosition) {
@@ -413,6 +491,15 @@ class PlayerController extends ChangeNotifier {
             }
           }),
     );
+  }
+
+  Future<void> _clearPlaybackCache(MediaItem item) async {
+    try {
+      await _libraryController.clearPlaybackCache(item);
+    } catch (_) {
+      // Song audio storage is disposable. Cleanup failures should never block
+      // playback or surface as a player error.
+    }
   }
 
   void _setPlaybackError(Object error) {

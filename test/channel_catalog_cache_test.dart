@@ -65,4 +65,51 @@ void main() {
     expect(restored.single.parts.single.partNumber, 1);
     expect(thumbnail, <int>[1, 2, 3, 4]);
   });
+
+  test('deduplicates the same Telegram message before restoring the catalog', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-catalog-dedup-test-',
+    );
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    const stale = MediaItem(
+      id: '-1001:50:4',
+      chatId: -1001,
+      messageId: 50,
+      fileId: 4,
+      title: 'Duplicate Track',
+      fileName: 'duplicate.flac',
+      mimeType: 'audio/flac',
+      size: 1000,
+      kind: MediaKind.audio,
+    );
+    const current = MediaItem(
+      id: '-1001:50:9',
+      chatId: -1001,
+      messageId: 50,
+      fileId: 9,
+      title: 'Duplicate Track',
+      fileName: 'duplicate.flac',
+      mimeType: 'audio/flac',
+      size: 1000,
+      kind: MediaKind.audio,
+      thumbnailFileId: 10,
+    );
+
+    await cache.writeItems(const <MediaItem>[stale, current]);
+    final restored = await cache.readItems();
+
+    expect(restored, hasLength(1));
+    expect(restored.single.messageId, 50);
+    expect(restored.single.fileId, 9);
+    expect(restored.single.thumbnailFileId, 10);
+  });
+
 }

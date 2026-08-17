@@ -132,8 +132,13 @@ class _SearchScreenState extends State<SearchScreen> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: MediaLibraryTile(
+                          key: ValueKey<String>('search-${item.messageKey}'),
                           item: item,
                           onTap: () => _open(scope, item),
+                          onToggleFavorite: () {
+                            scope.playerController.toggleFavoriteFor(item);
+                            setState(() {});
+                          },
                         ),
                       );
                     },
@@ -157,9 +162,13 @@ class _SearchScreenState extends State<SearchScreen> {
         return false;
       }
       final artist = item.artist?.toLowerCase() ?? '';
+      final album = item.album?.toLowerCase() ?? '';
+      final source = item.sourceName?.toLowerCase() ?? '';
       return item.title.toLowerCase().contains(query) ||
           item.fileName.toLowerCase().contains(query) ||
           artist.contains(query) ||
+          album.contains(query) ||
+          source.contains(query) ||
           item.mimeType.toLowerCase().contains(query);
     }).toList(growable: true);
     results.sort(
@@ -204,7 +213,7 @@ class _SearchHint extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Find songs by title, artist, file name or format.',
+              'Find songs by title, artist, album, source or file name.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.onSurfaceVariant,

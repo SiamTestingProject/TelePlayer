@@ -110,7 +110,12 @@ void main() {
     await tester.pump();
 
     expect(find.text('Library'), findsWidgets);
-    expect(find.text('Newest'), findsOneWidget);
+    expect(find.text('SONGS'), findsOneWidget);
+    expect(find.text('ALBUMS'), findsOneWidget);
+    expect(find.text('ARTISTS'), findsOneWidget);
+    expect(find.text('PLAYLISTS'), findsOneWidget);
+    expect(find.text('LIKED'), findsOneWidget);
+    expect(find.text('FOLDERS'), findsOneWidget);
     expect(find.text('Search'), findsOneWidget);
     expect(find.text('Player'), findsNothing);
     expect(find.byKey(const ValueKey<String>('library-search-field')), findsNothing);

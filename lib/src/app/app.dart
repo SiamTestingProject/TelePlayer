@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../features/auth/models/auth_models.dart';
 import '../features/auth/presentation/auth_screen.dart';
@@ -131,20 +133,108 @@ class _AppHomeState extends State<AppHome> {
 
   int _index = _libraryIndex;
   final List<int> _navigationHistory = <int>[_libraryIndex];
-  bool _scheduledUpdateCheck = false;
+  bool _scheduledStartupChecks = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_scheduledUpdateCheck) {
+    if (_scheduledStartupChecks) {
       return;
     }
-    _scheduledUpdateCheck = true;
+    _scheduledStartupChecks = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        unawaited(_checkForUpdateOnStartup());
+        unawaited(_runStartupChecks());
       }
     });
+  }
+
+  Future<void> _runStartupChecks() async {
+    await _checkNotificationPermissionOnStartup();
+    if (mounted) {
+      await _checkForUpdateOnStartup();
+    }
+  }
+
+  Future<void> _checkNotificationPermissionOnStartup() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    final status = await Permission.notification.status;
+    if (!mounted || status.isGranted) {
+      return;
+    }
+
+    final shouldGrant = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: const Icon(Icons.notifications_active_outlined, size: 36),
+          title: const Text('Notification permission required'),
+          content: const Text(
+            'TelePlayer needs notification permission so Android can show '
+            'the ongoing playback notification and media controls. TelePlayer '
+            'uses a media playback foreground service so songs can continue '
+            'playing while the app is in the background.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Skip'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(
+                status.isPermanentlyDenied ? 'Open settings' : 'Grant permission',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldGrant != true || !mounted) {
+      return;
+    }
+
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+      return;
+    }
+
+    final result = await Permission.notification.request();
+    if (!mounted || result.isGranted) {
+      return;
+    }
+
+    if (result.isPermanentlyDenied) {
+      final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Enable notifications in Settings'),
+          content: const Text(
+            'Android is not allowing TelePlayer notifications. Open the app '
+            'settings and enable notifications so the playback notification '
+            'and media controls can stay available in the background.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Open settings'),
+            ),
+          ],
+        ),
+      );
+      if (openSettings == true) {
+        await openAppSettings();
+      }
+    }
   }
 
   Future<void> _checkForUpdateOnStartup() async {
@@ -261,42 +351,84 @@ class _AppHomeState extends State<AppHome> {
                   ),
                 );
               }
-              if (authReady && _index == _playerIndex) {
-                return child;
-              }
-              return Scaffold(
-                body: child,
-                bottomNavigationBar: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    if (authReady &&
-                        scope.playerController.item != null &&
-                        _index != _playerIndex)
-                      _MiniPlayer(
-                        onOpenPlayer: () => _navigateTo(_playerIndex),
+              final mobilePage = authReady && _index == _playerIndex
+                  ? child
+                  : Scaffold(
+                      body: child,
+                      bottomNavigationBar: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          if (authReady &&
+                              scope.playerController.item != null &&
+                              _index != _playerIndex)
+                            _MiniPlayer(
+                              onOpenPlayer: () => _navigateTo(_playerIndex),
+                            ),
+                          NavigationBar(
+                            selectedIndex: _index,
+                            onDestinationSelected: _navigateTo,
+                            destinations: const [
+                              NavigationDestination(
+                                icon: Icon(Icons.library_music_outlined),
+                                selectedIcon: Icon(Icons.library_music_rounded),
+                                label: 'Library',
+                              ),
+                              NavigationDestination(
+                                icon: Icon(Icons.search_rounded),
+                                selectedIcon: Icon(Icons.manage_search_rounded),
+                                label: 'Search',
+                              ),
+                              NavigationDestination(
+                                icon: Icon(Icons.settings_outlined),
+                                selectedIcon: Icon(Icons.settings_rounded),
+                                label: 'Settings',
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    NavigationBar(
-                      selectedIndex: _index,
-                      onDestinationSelected: _navigateTo,
-                      destinations: const [
-                        NavigationDestination(
-                          icon: Icon(Icons.library_music_outlined),
-                          selectedIcon: Icon(Icons.library_music_rounded),
-                          label: 'Library',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.search_rounded),
-                          selectedIcon: Icon(Icons.manage_search_rounded),
-                          label: 'Search',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.settings_outlined),
-                          selectedIcon: Icon(Icons.settings_rounded),
-                          label: 'Settings',
-                        ),
-                      ],
-                    ),
+                    );
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 420),
+                reverseDuration: const Duration(milliseconds: 360),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                layoutBuilder: (currentChild, previousChildren) => Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    ...previousChildren,
+                    if (currentChild != null) currentChild,
                   ],
+                ),
+                transitionBuilder: (transitionChild, animation) {
+                  final key = transitionChild.key;
+                  final isPlayer = key is ValueKey<int> &&
+                      key.value == _playerIndex;
+                  if (isPlayer) {
+                    final curved = CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                      reverseCurve: Curves.easeInCubic,
+                    );
+                    return FadeTransition(
+                      opacity: curved,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.045),
+                          end: Offset.zero,
+                        ).animate(curved),
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.985, end: 1).animate(curved),
+                          child: transitionChild,
+                        ),
+                      ),
+                    );
+                  }
+                  return FadeTransition(opacity: animation, child: transitionChild);
+                },
+                child: KeyedSubtree(
+                  key: ValueKey<int>(_index),
+                  child: mobilePage,
                 ),
               );
             },

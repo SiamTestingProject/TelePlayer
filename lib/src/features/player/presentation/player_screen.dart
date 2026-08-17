@@ -30,61 +30,80 @@ class PlayerScreen extends StatelessWidget {
               ? _EmptyPlayer(onClose: onClose)
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 10, 24, 30),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 540),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              _PlayerHeader(
-                                onClose: onClose,
-                                onAudioOutput: () => _showAudioOutputInfo(context),
-                                onQueue: () => _showQueue(context),
-                              ),
-                              const SizedBox(height: 38),
-                              _ArtworkCarousel(
-                                item: item,
-                                nextItem: _nextLibraryItem(
-                                  item,
-                                  scope.libraryController.items,
+                    // The Now Playing surface is intentionally a fixed,
+                    // non-scrollable player. On shorter displays the complete
+                    // composition scales down uniformly instead of becoming a
+                    // vertical scroll view.
+                    final canvasWidth = math.min(
+                      588.0,
+                      math.max(320.0, constraints.maxWidth),
+                    );
+                    final items = scope.libraryController.items;
+                    return SizedBox.expand(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: canvasWidth,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                _PlayerHeader(
+                                  onClose: onClose,
+                                  onQueue: () => _showQueue(context),
                                 ),
-                              ),
-                              const SizedBox(height: 56),
-                              _TrackIdentity(
-                                item: item,
-                                onDetails: () => _showSongDetails(context, item),
-                              ),
-                              const SizedBox(height: 28),
-                              if (player.error != null) ...<Widget>[
-                                Theme(
-                                  data: Theme.of(context).copyWith(
-                                    colorScheme: Theme.of(context)
-                                        .colorScheme
-                                        .copyWith(
-                                          surface: _PlayerPalette.darkSurface,
-                                          onSurface: _PlayerPalette.text,
-                                          onSurfaceVariant:
-                                              _PlayerPalette.secondaryText,
-                                        ),
+                                const SizedBox(height: 28),
+                                _ArtworkCarousel(
+                                  item: item,
+                                  nextItem: _adjacentLibraryItem(
+                                    item,
+                                    items,
+                                    1,
                                   ),
-                                  child: ErrorPanel(
-                                    error: player.error!,
-                                    onAction: () => unawaited(player.open(item)),
+                                  previousItem: _adjacentLibraryItem(
+                                    item,
+                                    items,
+                                    -1,
                                   ),
                                 ),
+                                const SizedBox(height: 44),
+                                _TrackIdentity(
+                                  item: item,
+                                  onDetails: () => _showSongDetails(context, item),
+                                ),
+                                const SizedBox(height: 24),
+                                if (player.error != null) ...<Widget>[
+                                  Theme(
+                                    data: Theme.of(context).copyWith(
+                                      colorScheme: Theme.of(context)
+                                          .colorScheme
+                                          .copyWith(
+                                            surface: _PlayerPalette.darkSurface,
+                                            onSurface: _PlayerPalette.text,
+                                            onSurfaceVariant:
+                                                _PlayerPalette.secondaryText,
+                                          ),
+                                    ),
+                                    child: ErrorPanel(
+                                      error: player.error!,
+                                      onAction: () => unawaited(player.open(item)),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                _ProgressSection(player: player, item: item),
+                                const SizedBox(height: 48),
+                                _PrimaryControls(player: player),
                                 const SizedBox(height: 18),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                                  child: _PlaybackModes(player: player),
+                                ),
                               ],
-                              _ProgressSection(player: player, item: item),
-                              const SizedBox(height: 64),
-                              _PrimaryControls(player: player),
-                              const SizedBox(height: 21),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 26),
-                                child: _PlaybackModes(player: player),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
@@ -96,15 +115,25 @@ class PlayerScreen extends StatelessWidget {
     );
   }
 
-  MediaItem? _nextLibraryItem(MediaItem current, List<MediaItem> items) {
-    if (items.length < 2) {
+  MediaItem? _adjacentLibraryItem(
+    MediaItem current,
+    List<MediaItem> items,
+    int direction,
+  ) {
+    final audioItems = items
+        .where((candidate) => candidate.kind == MediaKind.audio)
+        .toList(growable: false);
+    if (audioItems.length < 2) {
       return null;
     }
-    final currentIndex = items.indexWhere((candidate) => candidate.id == current.id);
+    final currentIndex =
+        audioItems.indexWhere((candidate) => candidate.id == current.id);
     if (currentIndex < 0) {
-      return items.first;
+      return audioItems.first;
     }
-    return items[(currentIndex + 1) % items.length];
+    final rawIndex = (currentIndex + direction) % audioItems.length;
+    final index = rawIndex < 0 ? rawIndex + audioItems.length : rawIndex;
+    return audioItems[index];
   }
 
   void _showQueue(BuildContext context) {
@@ -153,36 +182,6 @@ class PlayerScreen extends StatelessWidget {
                 },
               );
             },
-          );
-        },
-      ),
-    );
-  }
-
-  void _showAudioOutputInfo(BuildContext context) {
-    unawaited(
-      showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        useSafeArea: true,
-        builder: (context) {
-          return const Padding(
-            padding: EdgeInsets.fromLTRB(24, 4, 24, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Audio output',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 10),
-                Text(
-                  'TelePlayer uses the active Android or Windows system audio output. '
-                  'Change Bluetooth, speaker, headset, or other routing from the system audio controls.',
-                ),
-              ],
-            ),
           );
         },
       ),
@@ -245,12 +244,10 @@ class _PlayerPalette {
 class _PlayerHeader extends StatelessWidget {
   const _PlayerHeader({
     required this.onClose,
-    required this.onAudioOutput,
     required this.onQueue,
   });
 
   final VoidCallback onClose;
-  final VoidCallback onAudioOutput;
   final VoidCallback onQueue;
 
   @override
@@ -280,12 +277,6 @@ class _PlayerHeader extends StatelessWidget {
             ),
           ),
         ),
-        _HeaderButton(
-          tooltip: 'Audio output',
-          onPressed: onAudioOutput,
-          child: const _AudioOutputGlyph(),
-        ),
-        const SizedBox(width: 8),
         _HeaderButton(
           tooltip: 'Playback queue',
           onPressed: onQueue,
@@ -336,64 +327,78 @@ class _HeaderButton extends StatelessWidget {
   }
 }
 
-class _AudioOutputGlyph extends StatelessWidget {
-  const _AudioOutputGlyph();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.square(
-      dimension: 28,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(
-            left: 2,
-            top: 2,
-            child: Icon(
-              Icons.smartphone_rounded,
-              size: 20,
-              color: _PlayerPalette.paleBlue,
-            ),
-          ),
-          Positioned(
-            right: -1,
-            bottom: 1,
-            child: Icon(
-              Icons.volume_up_rounded,
-              size: 17,
-              color: _PlayerPalette.paleBlue,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ArtworkCarousel extends StatelessWidget {
-  const _ArtworkCarousel({required this.item, required this.nextItem});
+class _ArtworkCarousel extends StatefulWidget {
+  const _ArtworkCarousel({
+    required this.item,
+    required this.nextItem,
+    required this.previousItem,
+  });
 
   final MediaItem item;
   final MediaItem? nextItem;
+  final MediaItem? previousItem;
+
+  @override
+  State<_ArtworkCarousel> createState() => _ArtworkCarouselState();
+}
+
+class _ArtworkCarouselState extends State<_ArtworkCarousel> {
+  static const double _velocityThreshold = 420;
+  double _dragOffset = 0;
+
+  void _updateDrag(DragUpdateDetails details, double artworkSize) {
+    setState(() {
+      _dragOffset = (_dragOffset + details.delta.dx)
+          .clamp(-artworkSize * 0.34, artworkSize * 0.34)
+          .toDouble();
+    });
+  }
+
+  void _finishDrag(DragEndDetails details, double artworkSize) {
+    final velocity = details.primaryVelocity ?? 0;
+    final crossedDistance = _dragOffset.abs() >= artworkSize * 0.16;
+    final crossedVelocity = velocity.abs() >= _velocityThreshold;
+    final direction = velocity.abs() >= _velocityThreshold
+        ? velocity.sign
+        : _dragOffset.sign;
+
+    setState(() => _dragOffset = 0);
+    if (!crossedDistance && !crossedVelocity) {
+      return;
+    }
+
+    final target = direction < 0 ? widget.nextItem : widget.previousItem;
+    if (target != null) {
+      unawaited(AppScope.of(context).playerController.open(target));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final library = AppScope.of(context).libraryController;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (nextItem == null) {
+        if (widget.nextItem == null) {
           final size = constraints.maxWidth.clamp(240.0, 430.0).toDouble();
           return Center(
-            child: SizedBox.square(
-              dimension: size,
-              child: Hero(
-                tag: 'artwork-${item.id}',
-                child: MediaArtwork(
-                  item: item,
-                  libraryController: library,
-                  borderRadius: 28,
-                  iconSize: 76,
-                  highQuality: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: (details) => _updateDrag(details, size),
+              onHorizontalDragEnd: (details) => _finishDrag(details, size),
+              onHorizontalDragCancel: () => setState(() => _dragOffset = 0),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                transform: Matrix4.translationValues(_dragOffset, 0, 0),
+                child: SizedBox.square(
+                  dimension: size,
+                  child: MediaArtwork(
+                    item: widget.item,
+                    libraryController: library,
+                    borderRadius: 28,
+                    iconSize: 76,
+                    highQuality: true,
+                  ),
                 ),
               ),
             ),
@@ -405,40 +410,45 @@ class _ArtworkCarousel extends StatelessWidget {
             .clamp(54.0, 82.0)
             .toDouble();
         final artworkSize = constraints.maxWidth - previewWidth - gap;
-        return SizedBox(
-          height: artworkSize,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                child: Hero(
-                  tag: 'artwork-${item.id}',
-                  child: MediaArtwork(
-                    item: item,
-                    libraryController: library,
-                    borderRadius: 28,
-                    iconSize: 76,
-                    highQuality: true,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragUpdate: (details) =>
+              _updateDrag(details, artworkSize),
+          onHorizontalDragEnd: (details) =>
+              _finishDrag(details, artworkSize),
+          onHorizontalDragCancel: () => setState(() => _dragOffset = 0),
+          child: SizedBox(
+            height: artworkSize,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              transform: Matrix4.translationValues(_dragOffset * 0.22, 0, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(
+                    child: MediaArtwork(
+                      item: widget.item,
+                      libraryController: library,
+                      borderRadius: 28,
+                      iconSize: 76,
+                      highQuality: true,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: gap),
+                  SizedBox(
+                    width: previewWidth,
+                    child: MediaArtwork(
+                      item: widget.nextItem!,
+                      libraryController: library,
+                      borderRadius: 28,
+                      iconSize: 40,
+                      highQuality: true,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: gap),
-              SizedBox(
-                width: previewWidth,
-                child: GestureDetector(
-                  onTap: () => unawaited(
-                    AppScope.of(context).playerController.open(nextItem!),
-                  ),
-                  child: MediaArtwork(
-                    item: nextItem!,
-                    libraryController: library,
-                    borderRadius: 28,
-                    iconSize: 40,
-                    highQuality: true,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -564,6 +574,7 @@ class _ProgressSection extends StatelessWidget {
         _WaveSeekBar(
           value: fraction,
           enabled: duration > Duration.zero,
+          animate: player.isPlaying && !player.isBuffering,
           onChanged: (value) => unawaited(player.seekToFraction(value)),
         ),
         const SizedBox(height: 8),
@@ -616,28 +627,73 @@ class _ProgressSection extends StatelessWidget {
   }
 }
 
-class _WaveSeekBar extends StatelessWidget {
+class _WaveSeekBar extends StatefulWidget {
   const _WaveSeekBar({
     required this.value,
     required this.enabled,
+    required this.animate,
     required this.onChanged,
   });
 
   final double value;
   final bool enabled;
+  final bool animate;
   final ValueChanged<double> onChanged;
+
+  @override
+  State<_WaveSeekBar> createState() => _WaveSeekBarState();
+}
+
+class _WaveSeekBarState extends State<_WaveSeekBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _waveController;
+
+  @override
+  void initState() {
+    super.initState();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1150),
+    );
+    _syncWaveAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WaveSeekBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate ||
+        oldWidget.enabled != widget.enabled) {
+      _syncWaveAnimation();
+    }
+  }
+
+  void _syncWaveAnimation() {
+    if (widget.animate && widget.enabled) {
+      if (!_waveController.isAnimating) {
+        _waveController.repeat();
+      }
+    } else {
+      _waveController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _waveController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 28,
+      height: 32,
       child: LayoutBuilder(
         builder: (context, constraints) {
           void update(double dx) {
-            if (!enabled || constraints.maxWidth <= 0) {
+            if (!widget.enabled || constraints.maxWidth <= 0) {
               return;
             }
-            onChanged(
+            widget.onChanged(
               (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble(),
             );
           }
@@ -645,10 +701,19 @@ class _WaveSeekBar extends StatelessWidget {
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (details) => update(details.localPosition.dx),
-            onHorizontalDragUpdate: (details) => update(details.localPosition.dx),
-            child: CustomPaint(
-              painter: _WaveSeekPainter(value: value),
-              size: Size(constraints.maxWidth, 28),
+            onHorizontalDragUpdate: (details) =>
+                update(details.localPosition.dx),
+            child: AnimatedBuilder(
+              animation: _waveController,
+              builder: (context, _) {
+                return CustomPaint(
+                  painter: _WaveSeekPainter(
+                    value: widget.value,
+                    phase: _waveController.value,
+                  ),
+                  size: Size(constraints.maxWidth, 32),
+                );
+              },
             ),
           );
         },
@@ -658,23 +723,34 @@ class _WaveSeekBar extends StatelessWidget {
 }
 
 class _WaveSeekPainter extends CustomPainter {
-  const _WaveSeekPainter({required this.value});
+  const _WaveSeekPainter({required this.value, required this.phase});
 
   final double value;
+  final double phase;
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) {
+      return;
+    }
+
     final centerY = size.height / 2;
-    final progressX = (size.width * value.clamp(0.0, 1.0)).toDouble();
+    final clampedValue = value.clamp(0.0, 1.0).toDouble();
+    final progressX = size.width * clampedValue;
     const thumbRadius = 8.5;
-    const waveAmplitude = 3.5;
-    const wavelength = 42.0;
+    const waveAmplitude = 4.2;
+    const wavelength = 30.0;
+    const sampleStep = 1.5;
+    final phaseRadians = phase * math.pi * 2;
 
     final inactivePaint = Paint()
       ..color = _PlayerPalette.inactiveTrack
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
-    final inactiveStart = math.min(size.width, progressX + 18).toDouble();
+    final inactiveStart = math.min(
+      size.width,
+      progressX + thumbRadius + 6,
+    ).toDouble();
     if (inactiveStart < size.width - 2) {
       canvas.drawLine(
         Offset(inactiveStart, centerY),
@@ -683,36 +759,59 @@ class _WaveSeekPainter extends CustomPainter {
       );
     }
 
-    if (progressX > 0) {
+    if (progressX > 1) {
       final activePaint = Paint()
         ..color = _PlayerPalette.text
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
+        ..strokeWidth = 5.5
         ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-      final path = Path()..moveTo(0, centerY);
-      for (double x = 1; x <= progressX; x += 2) {
+        ..strokeJoin = StrokeJoin.round
+        ..isAntiAlias = true;
+      final path = Path();
+      var x = 0.0;
+      var first = true;
+      while (x <= progressX) {
+        final edgeEnvelope = progressX < 36
+            ? (progressX == 0
+                  ? 0.0
+                  : (x / progressX).clamp(0.0, 1.0).toDouble())
+            : 1.0;
         final y = centerY +
-            math.sin((x / wavelength) * math.pi * 2) * waveAmplitude;
-        path.lineTo(x, y);
+            math.sin((x / wavelength) * math.pi * 2 - phaseRadians) *
+                waveAmplitude *
+                edgeEnvelope;
+        if (first) {
+          path.moveTo(x, y);
+          first = false;
+        } else {
+          path.lineTo(x, y);
+        }
+        x += sampleStep;
       }
+      // Land exactly beneath the thumb so the wave does not visually break
+      // when the sample step does not divide the progress width.
+      final endY = centerY +
+          math.sin((progressX / wavelength) * math.pi * 2 - phaseRadians) *
+              waveAmplitude;
+      path.lineTo(progressX, endY);
       canvas.drawPath(path, activePaint);
     }
 
-    final thumbCenter = Offset(
-      progressX.clamp(thumbRadius, size.width - thumbRadius).toDouble(),
-      centerY,
-    );
+    final thumbX = progressX
+        .clamp(thumbRadius, math.max(thumbRadius, size.width - thumbRadius))
+        .toDouble();
     canvas.drawCircle(
-      thumbCenter,
+      Offset(thumbX, centerY),
       thumbRadius,
-      Paint()..color = _PlayerPalette.text,
+      Paint()
+        ..color = _PlayerPalette.text
+        ..isAntiAlias = true,
     );
   }
 
   @override
   bool shouldRepaint(covariant _WaveSeekPainter oldDelegate) {
-    return oldDelegate.value != value;
+    return oldDelegate.value != value || oldDelegate.phase != phase;
   }
 }
 

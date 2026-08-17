@@ -59,6 +59,7 @@ class AppBootstrap {
       settingsController: settingsController,
     );
     final playerController = PlayerController(libraryController);
+    await playerController.initializeLibraryPreferences();
     final updateController = AppUpdateController(AppUpdateService());
 
     if (settingsController.settings.hasTelegramConfiguration) {

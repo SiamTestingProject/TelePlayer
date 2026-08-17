@@ -28,6 +28,7 @@ class MediaRepository {
 
   Future<List<MediaItem>> loadRecent(AppSettings settings) async {
     final configuredChannels = settings.channelIds.toSet();
+    final channelIds = configuredChannels.toList(growable: false);
     final cached = (await _catalogCache.readItems())
         .where(
           (item) =>
@@ -38,7 +39,7 @@ class MediaRepository {
     late final List<MediaItem> recent;
     try {
       recent = (await _telegramClient.listRecentMedia(
-        channelIds: settings.channelIds,
+        channelIds: channelIds,
         limitPerChannel: 60,
       )).where((item) => item.kind == MediaKind.audio).toList(growable: false);
     } catch (_) {
@@ -47,7 +48,7 @@ class MediaRepository {
       }
       rethrow;
     }
-    final merged = _mergeById(recent, cached);
+    final merged = _mergeByMessage(recent, cached);
     try {
       await _catalogCache.writeItems(merged);
     } catch (_) {
@@ -62,7 +63,7 @@ class MediaRepository {
     void Function(List<MediaItem> items)? onItemsAvailable,
   }) async {
     final scannedItems = await _telegramClient.listAllMedia(
-      channelIds: settings.channelIds,
+      channelIds: settings.channelIds.toSet().toList(growable: false),
       onProgress: (progress) {
         onProgress(
           ChannelCacheProgress(
@@ -73,9 +74,9 @@ class MediaRepository {
         );
       },
     );
-    final items = scannedItems
-        .where((item) => item.kind == MediaKind.audio)
-        .toList(growable: false);
+    final items = _deduplicateByMessage(
+      scannedItems.where((item) => item.kind == MediaKind.audio),
+    );
     await _catalogCache.writeItems(items);
     onItemsAvailable?.call(List<MediaItem>.unmodifiable(items));
 
@@ -189,6 +190,18 @@ class MediaRepository {
       );
     }
     return _refreshAndRegister(item);
+  }
+
+  Future<void> clearPlaybackCache(MediaItem item) async {
+    final client = _telegramClient;
+    if (client is! PlaybackCacheCleaner) {
+      return;
+    }
+    try {
+      await (client as PlaybackCacheCleaner).clearPlaybackCache(item);
+    } catch (_) {
+      // Playback cache cleanup is best-effort and must never interrupt the UI.
+    }
   }
 
   Future<Uri> _refreshAndRegister(MediaItem item) async {
@@ -365,19 +378,35 @@ class MediaRepository {
     }
   }
 
-  List<MediaItem> _mergeById(
+  List<MediaItem> _mergeByMessage(
     List<MediaItem> preferred,
     List<MediaItem> fallback,
   ) {
-    final byId = <String, MediaItem>{};
+    // TDLib file IDs can change after the local Telegram database is rebuilt.
+    // The Telegram chat/message pair is the stable identity of a song, so
+    // merging by MediaItem.id (which also contains fileId) can resurrect a
+    // stale cached copy beside the fresh one after an app restart.
+    final byMessage = <String, MediaItem>{};
     for (final item in fallback) {
-      byId[item.id] = item;
+      byMessage[_messageKey(item)] = item;
     }
     for (final item in preferred) {
-      byId[item.id] = item;
+      byMessage[_messageKey(item)] = item;
     }
-    final items = byId.values.toList()
+    final items = byMessage.values.toList()
       ..sort((left, right) => right.messageId.compareTo(left.messageId));
     return items;
   }
+
+  List<MediaItem> _deduplicateByMessage(Iterable<MediaItem> source) {
+    final byMessage = <String, MediaItem>{};
+    for (final item in source) {
+      byMessage[_messageKey(item)] = item;
+    }
+    final items = byMessage.values.toList()
+      ..sort((left, right) => right.messageId.compareTo(left.messageId));
+    return items;
+  }
+
+  String _messageKey(MediaItem item) => '${item.chatId}:${item.messageId}';
 }

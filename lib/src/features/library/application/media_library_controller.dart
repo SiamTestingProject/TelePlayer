@@ -113,6 +113,9 @@ class MediaLibraryController extends ChangeNotifier {
 
   Future<Uri> streamUriFor(MediaItem item) => _repository.streamUriFor(item);
 
+  Future<void> clearPlaybackCache(MediaItem item) =>
+      _repository.clearPlaybackCache(item);
+
   Future<AudioTechnicalMetadata?> technicalMetadataFor(MediaItem item) {
     return _technicalMetadataRequests.putIfAbsent(
       item.id,

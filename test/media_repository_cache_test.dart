@@ -240,6 +240,71 @@ void main() {
     );
   });
 
+  test('does not duplicate a cached song when TDLib file id changes', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-reopen-dedup-test-',
+    );
+    const stale = MediaItem(
+      id: '-1001:55:7',
+      chatId: -1001,
+      messageId: 55,
+      fileId: 7,
+      title: 'Same Telegram Song',
+      fileName: 'same-song.flac',
+      mimeType: 'audio/flac',
+      size: 500,
+      kind: MediaKind.audio,
+    );
+    const fresh = MediaItem(
+      id: '-1001:55:91',
+      chatId: -1001,
+      messageId: 55,
+      fileId: 91,
+      title: 'Same Telegram Song',
+      fileName: 'same-song.flac',
+      mimeType: 'audio/flac',
+      size: 500,
+      kind: MediaKind.audio,
+      thumbnailFileId: 92,
+    );
+    final telegram = _ThumbnailFailureTelegramClient(
+      items: const <MediaItem>[fresh],
+    );
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    await cache.writeItems(const <MediaItem>[stale]);
+    final repository = MediaRepository(
+      telegramClient: telegram,
+      streamingServer: LocalStreamingServer(telegram),
+      catalogCache: cache,
+      thumbnailRetryBaseDelay: Duration.zero,
+    );
+    addTearDown(() async {
+      await telegram.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final items = await repository.loadRecent(
+      const AppSettings(
+        apiId: 1,
+        apiHash: 'test-hash',
+        channelIds: <int>[-1001],
+        cacheLimitMb: 4096,
+        preferWifi: true,
+      ),
+    );
+
+    expect(items, hasLength(1));
+    expect(items.single.messageId, 55);
+    expect(items.single.fileId, 91);
+    final persisted = await cache.readItems();
+    expect(persisted, hasLength(1));
+    expect(persisted.single.fileId, 91);
+  });
+
   test('excludes Telegram video messages from the cached song library', () async {
     final directory = await Directory.systemTemp.createTemp(
       'teleplayer-audio-only-cache-test-',

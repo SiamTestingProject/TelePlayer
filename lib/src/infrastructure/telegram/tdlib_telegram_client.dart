@@ -18,7 +18,11 @@ import 'telegram_client.dart';
 typedef ApplicationSupportDirectoryProvider = Future<io.Directory> Function();
 
 class TdlibTelegramClient
-    implements TelegramClient, EmbeddedArtworkProvider, AudioTechnicalMetadataProvider {
+    implements
+        TelegramClient,
+        EmbeddedArtworkProvider,
+        AudioTechnicalMetadataProvider,
+        PlaybackCacheCleaner {
   TdlibTelegramClient(
     this._gateway, {
     ApplicationSupportDirectoryProvider? applicationSupportDirectory,
@@ -31,6 +35,7 @@ class TdlibTelegramClient
   final _errors = StreamController<AppException>.broadcast();
   final _fileDownloadQueues = <int, Completer<void>>{};
   final _fullDownloadRequests = <int>{};
+  final Map<int, String> _chatTitles = <int, String>{};
 
   AppSettings? _settings;
   StreamSubscription<Map<String, dynamic>>? _updatesSub;
@@ -284,7 +289,11 @@ class TdlibTelegramClient
   Future<void> _removeAvailableChats(Set<int> unresolved) async {
     for (final chatId in unresolved.toList(growable: false)) {
       try {
-        await _gateway.send(td.GetChat(chatId: chatId));
+        final chat = await _gateway.send(td.GetChat(chatId: chatId));
+        final title = chat['title']?.toString().trim() ?? '';
+        if (title.isNotEmpty) {
+          _chatTitles[chatId] = title;
+        }
         unresolved.remove(chatId);
       } on AppException catch (error) {
         if (error.code != AppErrorCode.privateChannel) {
@@ -386,6 +395,50 @@ class TdlibTelegramClient
       // Allow a later range read to retry the full prefetch. Playback itself
       // continues to use the synchronous high-priority range request.
       _fullDownloadRequests.remove(fileId);
+    }
+  }
+
+  @override
+  Future<void> clearPlaybackCache(MediaItem item) async {
+    var currentItem = item;
+    try {
+      currentItem = await refreshMedia(item);
+    } catch (_) {
+      // The last known file IDs are still useful if the message cannot be
+      // refreshed while the device is offline.
+    }
+    final fileIds = <int>{
+      if (currentItem.fileId > 0) currentItem.fileId,
+      ...currentItem.parts
+          .map((part) => part.fileId)
+          .where((fileId) => fileId > 0),
+    };
+
+    for (final fileId in fileIds) {
+      await _withFileDownloadLock(fileId, () async {
+        _fullDownloadRequests.remove(fileId);
+        try {
+          await _gateway.send(
+            td.CancelDownloadFile(
+              fileId: fileId,
+              onlyIfPending: false,
+            ),
+            timeout: const Duration(seconds: 10),
+          );
+        } catch (_) {
+          // The full-file prefetch may already have completed. Deleting the
+          // cached file below is still the important cleanup step.
+        }
+        try {
+          await _gateway.send(
+            td.DeleteFile(fileId: fileId),
+            timeout: const Duration(seconds: 15),
+          );
+        } catch (_) {
+          // Playback cleanup is best-effort. A failed deletion must never make
+          // the next track unavailable; TDLib can retry cleanup later.
+        }
+      });
     }
   }
 
@@ -634,7 +687,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.3.6',
+        applicationVersion: '1.4.1',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
@@ -719,6 +772,8 @@ class TdlibTelegramClient
       dateEpochSeconds:
           int.tryParse(message['date']?.toString() ?? '') ?? 0,
       artist: _artistForMedia(media),
+      album: _albumForMedia(media),
+      sourceName: _chatTitles[chatId],
       durationSeconds: int.tryParse(media['duration']?.toString() ?? ''),
       thumbnailFileId: _thumbnailFileId(media),
       inlineThumbnailBase64: _inlineThumbnailBase64(media),
@@ -849,6 +904,16 @@ class TdlibTelegramClient
   String? _artistForMedia(Map<String, dynamic> media) {
     final performer = media['performer']?.toString().trim() ?? '';
     return performer.isEmpty ? null : performer;
+  }
+
+  String? _albumForMedia(Map<String, dynamic> media) {
+    for (final key in const <String>['album', 'album_title', 'album_name']) {
+      final value = media[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic>? _asMap(Object? value) {

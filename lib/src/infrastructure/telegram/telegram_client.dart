@@ -48,3 +48,7 @@ abstract interface class EmbeddedArtworkProvider {
 abstract interface class AudioTechnicalMetadataProvider {
   Future<AudioTechnicalMetadata?> loadTechnicalMetadata(MediaItem item);
 }
+
+abstract interface class PlaybackCacheCleaner {
+  Future<void> clearPlaybackCache(MediaItem item);
+}

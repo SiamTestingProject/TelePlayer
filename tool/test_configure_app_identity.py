@@ -35,6 +35,10 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 1,
             )
             self.assertEqual(
+                manifest_text.count('android.permission.POST_NOTIFICATIONS'),
+                1,
+            )
+            self.assertEqual(
                 manifest_text.count('android:usesCleartextTraffic="true"'),
                 1,
             )

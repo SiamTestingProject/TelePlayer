@@ -4,9 +4,10 @@ A Flutter Material 3 music app for Android and Windows that signs in to
 Telegram, browses songs from configured channels, and plays audio through a
 local range-aware streaming server.
 
-Version 1.3 adds an artwork-led, audio-only Library, a persistent mini-player,
-a full-screen Now Playing experience, queue/shuffle/repeat/favorite controls,
-and lower-latency Telegram playback. Android playback now runs through a media
+Version 1.4 adds a category-driven, artwork-led Library with Songs, Albums,
+Artists, Playlists, Liked, and Telegram-source Folders, plus persistent liked
+songs, a persistent mini-player, a full-screen Now Playing experience,
+queue/shuffle/repeat/favorite controls, and lower-latency Telegram playback. Android playback now runs through a media
 foreground service, so songs continue while the app is backgrounded and remain
 controllable from the notification, lock screen, and headset buttons. Android
 also permits the app's loopback HTTP audio bridge, and open-ended player range
@@ -19,9 +20,9 @@ the best album artwork Telegram exposes. Artwork downloads are retried after a
 message refresh, and Telegram's embedded mini artwork is retained as a fallback
 when the full thumbnail is unavailable. Cached catalog entries remain browsable
 when a later refresh is interrupted; audio payloads stay in TDLib's managed
-cache and are downloaded as playback needs them. Library sorting provides
-separate, tappable **Newest** and **A-Z** choices and applies an explicit order
-in both modes.
+cache and are downloaded as playback needs them. The Library category rail is horizontally scrollable, album/artist/folder
+groups open into their songs, smart playlists include All Songs and Recently
+Added, and the sort menu switches between **Newest** and **A-Z**.
 
 ## Current Architecture
 
@@ -100,19 +101,19 @@ Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together in a GitHub prerelease tagged `build-<run number>`.
 
-Push a version tag such as `v1.3.6` to publish a normal GitHub Release instead.
+Push a version tag such as `v1.4.2` to publish a normal GitHub Release instead.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.3.6.apk`
-- `TelePlayer-v1.3.6-arm64.apk`
-- `TelePlayer-v1.3.6-armeabi-v7a.apk`
-- `TelePlayer-v1.3.6-x86_64.apk`
-- `TelePlayer-v1.3.6-aab.aab`
-- `TelePlayer-v1.3.6-Setup.exe`
-- `TelePlayer-v1.3.6-windows-x64.zip`
+- `TelePlayer-v1.4.2.apk`
+- `TelePlayer-v1.4.2-arm64.apk`
+- `TelePlayer-v1.4.2-armeabi-v7a.apk`
+- `TelePlayer-v1.4.2-x86_64.apk`
+- `TelePlayer-v1.4.2-aab.aab`
+- `TelePlayer-v1.4.2-Setup.exe`
+- `TelePlayer-v1.4.2-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop
