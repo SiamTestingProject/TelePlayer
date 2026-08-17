@@ -24,6 +24,7 @@ class MediaLibraryController extends ChangeNotifier {
   List<MediaItem> _items = const <MediaItem>[];
   final Map<String, Future<Uint8List?>> _thumbnailRequests =
       <String, Future<Uint8List?>>{};
+  final Map<String, Uint8List> _resolvedThumbnails = <String, Uint8List>{};
   final Map<String, Future<AudioTechnicalMetadata?>> _technicalMetadataRequests =
       <String, Future<AudioTechnicalMetadata?>>{};
 
@@ -43,9 +44,13 @@ class MediaLibraryController extends ChangeNotifier {
         _items = const <MediaItem>[];
       } else {
         _items = await _repository.loadRecent(settings);
+        final activeMessageKeys = _items.map((item) => item.messageKey).toSet();
         final activeIds = _items.map((item) => item.id).toSet();
         _thumbnailRequests.removeWhere(
-          (key, _) => !activeIds.contains(key.split('|').first),
+          (key, _) => !activeMessageKeys.contains(key.split('|').first),
+        );
+        _resolvedThumbnails.removeWhere(
+          (key, _) => !activeMessageKeys.contains(key.split('|').first),
         );
         _technicalMetadataRequests.removeWhere(
           (id, _) => !activeIds.contains(id),
@@ -88,6 +93,7 @@ class MediaLibraryController extends ChangeNotifier {
         onItemsAvailable: (availableItems) {
           _items = availableItems;
           _thumbnailRequests.clear();
+          _resolvedThumbnails.clear();
           _technicalMetadataRequests.clear();
           notifyListeners();
         },
@@ -98,6 +104,7 @@ class MediaLibraryController extends ChangeNotifier {
       );
       _items = items;
       _thumbnailRequests.clear();
+      _resolvedThumbnails.clear();
       _technicalMetadataRequests.clear();
       return true;
     } catch (error) {
@@ -119,6 +126,20 @@ class MediaLibraryController extends ChangeNotifier {
   Future<void> clearPlaybackCache(MediaItem item) =>
       _repository.clearPlaybackCache(item);
 
+  Future<void> clearAllCachedData() async {
+    if (_isCaching) {
+      throw const AppException(
+        AppErrorCode.cacheUnavailable,
+        message: 'Wait for the current library cache operation to finish first.',
+      );
+    }
+    await _repository.clearAllCachedData(_items);
+    _thumbnailRequests.clear();
+    _resolvedThumbnails.clear();
+    _technicalMetadataRequests.clear();
+    _cacheProgress = null;
+  }
+
   Future<AudioTechnicalMetadata?> technicalMetadataFor(MediaItem item) {
     return _technicalMetadataRequests.putIfAbsent(
       item.id,
@@ -126,19 +147,82 @@ class MediaLibraryController extends ChangeNotifier {
     );
   }
 
+  Uint8List? cachedThumbnailFor(
+    MediaItem item, {
+    bool highQuality = false,
+  }) {
+    final quality = highQuality ? 'hq' : 'thumb';
+    final exact = _resolvedThumbnails['${item.messageKey}|$quality'];
+    if (exact != null && exact.isNotEmpty) {
+      return exact;
+    }
+    if (highQuality) {
+      final preview = _resolvedThumbnails['${item.messageKey}|thumb'];
+      if (preview != null && preview.isNotEmpty) {
+        return preview;
+      }
+    }
+    return null;
+  }
+
   Future<Uint8List?> thumbnailFor(
     MediaItem item, {
     bool highQuality = false,
   }) {
-    // Keep list-tile and full-player requests separate. A tiny Telegram cover
-    // may be fine in the library while the player needs embedded original art.
-    final requestKey = '${item.id}|${highQuality ? 'hq' : 'thumb'}';
-    return _thumbnailRequests.putIfAbsent(
-      requestKey,
-      () => _repository.loadThumbnail(
-        item,
-        preferHighResolution: highQuality,
-      ),
+    // Telegram chat/message identity is stable across TDLib restarts, while a
+    // TDLib fileId is not. Key artwork requests by message so a refreshed item
+    // does not strand a completed/null Future under an obsolete file ID.
+    final requestKey =
+        '${item.messageKey}|${highQuality ? 'hq' : 'thumb'}';
+    final existing = _thumbnailRequests[requestKey];
+    if (existing != null) {
+      return existing;
+    }
+
+    late final Future<Uint8List?> request;
+    request = _loadThumbnailWithRetry(item, highQuality: highQuality).then(
+      (bytes) {
+        // Never cache a missing cover forever. A thumbnail download can race a
+        // playback-cache cleanup or briefly fail during a song switch; letting
+        // the next widget request retry fixes covers that previously stayed as
+        // the music-note placeholder until the app restarted.
+        if (bytes != null && bytes.isNotEmpty) {
+          _resolvedThumbnails[requestKey] = bytes;
+        } else if (identical(_thumbnailRequests[requestKey], request)) {
+          _thumbnailRequests.remove(requestKey);
+          _resolvedThumbnails.remove(requestKey);
+        }
+        return bytes;
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (identical(_thumbnailRequests[requestKey], request)) {
+          _thumbnailRequests.remove(requestKey);
+          _resolvedThumbnails.remove(requestKey);
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      },
+    );
+    _thumbnailRequests[requestKey] = request;
+    return request;
+  }
+
+  Future<Uint8List?> _loadThumbnailWithRetry(
+    MediaItem item, {
+    required bool highQuality,
+  }) async {
+    final first = await _repository.loadThumbnail(
+      item,
+      preferHighResolution: highQuality,
+    );
+    if (first != null && first.isNotEmpty) {
+      return first;
+    }
+    // One forced refresh is enough to recover from stale Telegram thumbnail
+    // metadata without creating an endless retry loop for songs with no cover.
+    return _repository.loadThumbnail(
+      item,
+      retryRemote: true,
+      preferHighResolution: highQuality,
     );
   }
 }

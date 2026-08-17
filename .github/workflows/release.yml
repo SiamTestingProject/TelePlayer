@@ -17,10 +17,47 @@ env:
   APP_NAME: TelePlayer
   FLUTTER_VERSION: "3.44.8"
   ANDROID_COMPILE_SDK: "36"
+  BUNDLETOOL_VERSION: "1.18.3"
 
 jobs:
-  android:
-    name: Build Android artifacts
+  quality:
+    name: Validate Flutter source
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Validate build configuration tools
+        run: python -m unittest discover -s tool -p "test_*.py"
+
+      - name: Validate release tag matches app version
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'release' && startsWith(github.event.release.tag_name || '', 'v'))
+        run: python tool/validate_release_version.py --tag "${{ github.event.release.tag_name || github.ref_name }}"
+
+      - name: Run static analysis
+        run: flutter analyze --fatal-infos
+
+      - name: Run tests
+        run: flutter test
+
+  android_apks:
+    name: Build Android ABI APKs
     if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
     runs-on: ubuntu-latest
 
@@ -45,9 +82,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-
-      - name: Show Flutter version
-        run: flutter --version
 
       - name: Prepare Android host project
         run: flutter create --platforms=android --project-name telegram_media_player .
@@ -82,35 +116,209 @@ jobs:
           EOF
           python tool/configure_android_signing.py
 
+      - name: Setup Gradle build cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Enable Gradle build cache and parallel execution
+        run: |
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.caching=true
+          org.gradle.parallel=true
+          EOF
+
       - name: Install dependencies
         run: flutter pub get
-
-      - name: Validate build configuration tools
-        run: python -m unittest discover -s tool -p "test_*.py"
-
-      - name: Validate release tag matches app version
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'release' && startsWith(github.event.release.tag_name || '', 'v'))
-        run: python tool/validate_release_version.py --tag "${{ github.event.release.tag_name || github.ref_name }}"
 
       - name: Patch tdlib Android build configuration
         run: python tool/patch_tdlib_android_namespace.py --compile-sdk "$ANDROID_COMPILE_SDK"
 
-      - name: Run static analysis
-        run: flutter analyze --fatal-infos
-
-      - name: Run tests
-        run: flutter test
-
-      - name: Build universal APK
-        run: flutter build apk --release --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
-
       - name: Build ABI APKs
-        run: flutter build apk --release --split-per-abi --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
+        run: >-
+          flutter build apk --release --split-per-abi
+          --target-platform=android-arm,android-arm64,android-x64
+          --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
+
+      - name: Stage ABI APKs
+        run: |
+          set -euo pipefail
+          mkdir -p android-apk-part
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk android-apk-part/
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk android-apk-part/
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk android-apk-part/
+          ls -lh android-apk-part
+
+      - name: Upload ABI APK part
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-part-${{ github.run_number }}
+          path: android-apk-part/*
+          if-no-files-found: error
+          compression-level: 0
+
+  android_bundle:
+    name: Build Android AAB + universal APK
+    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Prepare Android host project
+        run: flutter create --platforms=android --project-name telegram_media_player .
+
+      - name: Restore checked-in Dart sources
+        run: git checkout -- lib test pubspec.yaml analysis_options.yaml
+
+      - name: Apply TelePlayer Android identity
+        run: python tool/configure_app_identity.py --platform android
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
+            echo "No Android signing secrets configured; building with Flutter's default release signing."
+            exit 0
+          fi
+          test -n "${ANDROID_KEY_ALIAS:-}" || { echo "ANDROID_KEY_ALIAS is required when ANDROID_KEYSTORE_BASE64 is set"; exit 1; }
+          test -n "${ANDROID_KEY_PASSWORD:-}" || { echo "ANDROID_KEY_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set"; exit 1; }
+          test -n "${ANDROID_STORE_PASSWORD:-}" || { echo "ANDROID_STORE_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set"; exit 1; }
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+          python tool/configure_android_signing.py
+
+      - name: Setup Gradle build cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Enable Gradle build cache and parallel execution
+        run: |
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.caching=true
+          org.gradle.parallel=true
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Patch tdlib Android build configuration
+        run: python tool/patch_tdlib_android_namespace.py --compile-sdk "$ANDROID_COMPILE_SDK"
 
       - name: Build Android App Bundle
-        run: flutter build appbundle --release --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
+        run: >-
+          flutter build appbundle --release
+          --target-platform=android-arm,android-arm64,android-x64
+          --dart-define=GITHUB_REPOSITORY=${{ github.repository }}
 
-      - name: Rename artifacts
+      - name: Cache bundletool
+        id: cache-bundletool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bundletool/bundletool-all-${{ env.BUNDLETOOL_VERSION }}.jar
+          key: bundletool-${{ runner.os }}-${{ env.BUNDLETOOL_VERSION }}
+
+      - name: Install bundletool
+        if: steps.cache-bundletool.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/bundletool"
+          curl --fail --location --retry 3 \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" \
+            --output "$HOME/.cache/bundletool/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+
+      - name: Generate universal APK from AAB
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUNDLETOOL="$HOME/.cache/bundletool/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+          AAB="build/app/outputs/bundle/release/app-release.aab"
+          APKS="$RUNNER_TEMP/teleplayer-universal.apks"
+          test -s "$BUNDLETOOL" || { echo "bundletool is missing"; exit 1; }
+          test -s "$AAB" || { echo "App Bundle is missing"; exit 1; }
+
+          SIGNING_ARGS=()
+          if [[ -n "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
+            printf '%s' "$ANDROID_STORE_PASSWORD" > "$RUNNER_TEMP/teleplayer-store-pass.txt"
+            printf '%s' "$ANDROID_KEY_PASSWORD" > "$RUNNER_TEMP/teleplayer-key-pass.txt"
+            SIGNING_ARGS+=(
+              "--ks=android/app/upload-keystore.jks"
+              "--ks-pass=file:$RUNNER_TEMP/teleplayer-store-pass.txt"
+              "--ks-key-alias=$ANDROID_KEY_ALIAS"
+              "--key-pass=file:$RUNNER_TEMP/teleplayer-key-pass.txt"
+            )
+          fi
+
+          java -jar "$BUNDLETOOL" build-apks \
+            --bundle="$AAB" \
+            --output="$APKS" \
+            --mode=universal \
+            --overwrite \
+            "${SIGNING_ARGS[@]}"
+
+          mkdir -p android-bundle-part
+          unzip -p "$APKS" universal.apk > android-bundle-part/app-release.apk
+          cp "$AAB" android-bundle-part/app-release.aab
+          test -s android-bundle-part/app-release.apk || { echo "Universal APK extraction failed"; exit 1; }
+          test -s android-bundle-part/app-release.aab || { echo "AAB staging failed"; exit 1; }
+          ls -lh android-bundle-part
+
+      - name: Upload AAB and universal APK part
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-bundle-part-${{ github.run_number }}
+          path: android-bundle-part/*
+          if-no-files-found: error
+          compression-level: 0
+
+  android:
+    name: Build Android artifacts
+    needs: [android_apks, android_bundle]
+    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Android build parts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-*-part-${{ github.run_number }}
+          path: android-parts
+          merge-multiple: true
+
+      - name: Rename Android artifacts
         run: |
           set -euo pipefail
           RAW_REF="${GITHUB_REF_NAME}"
@@ -127,21 +335,16 @@ jobs:
           fi
           VERSION="${ARTIFACT_REF#v}"
           mkdir -p dist
-          test -f build/app/outputs/flutter-apk/app-release.apk || { echo "Universal APK missing"; exit 1; }
-          cp build/app/outputs/flutter-apk/app-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}.apk"
-          if [[ -f build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ]]; then
-            cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}-arm64.apk"
-          else
-            echo "ARM64 APK missing"; exit 1
-          fi
-          if [[ -f build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ]]; then
-            cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}-armeabi-v7a.apk"
-          fi
-          if [[ -f build/app/outputs/flutter-apk/app-x86_64-release.apk ]]; then
-            cp build/app/outputs/flutter-apk/app-x86_64-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}-x86_64.apk"
-          fi
-          test -f build/app/outputs/bundle/release/app-release.aab || { echo "AAB missing"; exit 1; }
-          cp build/app/outputs/bundle/release/app-release.aab "dist/${APP_NAME}-${ARTIFACT_REF}-aab.aab"
+          test -f android-parts/app-release.apk || { echo "Universal APK missing"; exit 1; }
+          test -f android-parts/app-arm64-v8a-release.apk || { echo "ARM64 APK missing"; exit 1; }
+          test -f android-parts/app-armeabi-v7a-release.apk || { echo "ARM32 APK missing"; exit 1; }
+          test -f android-parts/app-x86_64-release.apk || { echo "x86_64 APK missing"; exit 1; }
+          test -f android-parts/app-release.aab || { echo "AAB missing"; exit 1; }
+          cp android-parts/app-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}.apk"
+          cp android-parts/app-arm64-v8a-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}-arm64.apk"
+          cp android-parts/app-armeabi-v7a-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}-armeabi-v7a.apk"
+          cp android-parts/app-x86_64-release.apk "dist/${APP_NAME}-${ARTIFACT_REF}-x86_64.apk"
+          cp android-parts/app-release.aab "dist/${APP_NAME}-${ARTIFACT_REF}-aab.aab"
           echo "version=$VERSION" >> "$GITHUB_ENV"
           ls -lh dist
 
@@ -151,6 +354,8 @@ jobs:
           name: android-artifacts-${{ github.run_number }}
           path: dist/*
           if-no-files-found: error
+          compression-level: 0
+
 
   windows:
     name: Build Windows artifact
@@ -339,7 +544,7 @@ jobs:
 
   release:
     name: Publish all GitHub Release assets
-    needs: [android, windows]
+    needs: [quality, android, windows]
     if: github.event_name != 'release' || !startsWith(github.event.release.tag_name || '', 'build-')
     runs-on: ubuntu-latest
 
@@ -380,6 +585,32 @@ jobs:
             echo "RELEASE_PRERELEASE=$RELEASE_PRERELEASE"
           } >> "$GITHUB_ENV"
 
+      - name: Prepare release changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pattern = re.compile(
+              rf"(?ms)^## \[{re.escape(version)}\](?:[^\n]*)\n(.*?)(?=^## \[|\Z)"
+          )
+          match = pattern.search(changelog)
+          if match:
+              notes = match.group(1).strip()
+          else:
+              notes = (
+                  "### What's New\n\n"
+                  "- TelePlayer was updated with performance, stability, and interface improvements."
+              )
+          Path("release-notes.md").write_text(notes + "\n", encoding="utf-8")
+          print(Path("release-notes.md").read_text(encoding="utf-8"))
+          PY
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -406,6 +637,6 @@ jobs:
           name: ${{ env.RELEASE_NAME }}
           target_commitish: ${{ github.sha }}
           prerelease: ${{ env.RELEASE_PRERELEASE }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: release-assets/*
           fail_on_unmatched_files: true

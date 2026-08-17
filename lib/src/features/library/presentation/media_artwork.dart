@@ -26,6 +26,11 @@ class MediaArtwork extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: FutureBuilder<Uint8List?>(
+        key: ValueKey<String>('artwork-future-${item.messageKey}-$highQuality'),
+        initialData: libraryController.cachedThumbnailFor(
+          item,
+          highQuality: highQuality,
+        ),
         future: libraryController.thumbnailFor(
           item,
           highQuality: highQuality,
@@ -35,9 +40,12 @@ class MediaArtwork extends StatelessWidget {
           if (bytes != null && bytes.isNotEmpty) {
             return Image.memory(
               bytes,
+              key: ValueKey<String>(
+                'artwork-image-${item.messageKey}-$highQuality-${bytes.length}',
+              ),
               fit: BoxFit.cover,
               filterQuality: FilterQuality.high,
-              gaplessPlayback: true,
+              gaplessPlayback: false,
               errorBuilder: (_, _, _) => _ArtworkFallback(
                 iconSize: iconSize,
               ),

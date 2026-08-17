@@ -39,7 +39,7 @@ void main() {
     });
 
     test(
-      'selects a newer stable release and the universal Android APK',
+      'selects a newer stable release and defaults to the ARM64 Android APK',
       () async {
         final service = AppUpdateService(
           repository: 'example/teleplayer',
@@ -59,8 +59,10 @@ void main() {
                     '**Full Changelog**: '
                     'https://github.com/example/teleplayer',
                 assets: <Object?>[
-                  _asset('TelePlayer-v1.2.0-arm64.apk'),
-                  _asset('TelePlayer-v1.2.0.apk'),
+                  _asset('TelePlayer-v1.2.0-arm64.apk', size: 41000000),
+                  _asset('TelePlayer-v1.2.0-armeabi-v7a.apk', size: 33000000),
+                  _asset('TelePlayer-v1.2.0-x86_64.apk', size: 44000000),
+                  _asset('TelePlayer-v1.2.0.apk', size: 82000000),
                 ],
               ),
             ];
@@ -76,7 +78,11 @@ void main() {
         expect(
           result.update!.downloadUri.path,
           '/example/teleplayer/releases/download/v1.2.0/'
-          'TelePlayer-v1.2.0.apk',
+          'TelePlayer-v1.2.0-arm64.apk',
+        );
+        expect(
+          result.update!.androidAssets.map((asset) => asset.label),
+          containsAll(<String>['ARM64', 'Universal']),
         );
         expect(result.update!.isDirectDownload, isTrue);
         expect(
@@ -85,6 +91,33 @@ void main() {
         );
       },
     );
+
+    test('keeps plain release-note lines in the changelog', () async {
+      final service = AppUpdateService(
+        repository: 'example/teleplayer',
+        platform: UpdatePlatform.android,
+        installedVersionLoader: () async => '1.0.0',
+        releaseLoader: (_) async => <Object?>[
+          _release(
+            tag: 'v1.1.0',
+            body: '## What\'s New\n\n'
+                'Direct downloads now stay inside TelePlayer.\n'
+                '- Added ARM64 and ARM32 choices.',
+            assets: <Object?>[_asset('TelePlayer-v1.1.0-arm64.apk')],
+          ),
+        ],
+      );
+
+      final result = await service.checkForUpdate();
+
+      expect(
+        result.update!.changes,
+        <String>[
+          'Direct downloads now stay inside TelePlayer.',
+          'Added ARM64 and ARM32 choices.',
+        ],
+      );
+    });
 
     test(
       'selects the Windows installer instead of another executable',
@@ -204,10 +237,11 @@ Map<String, Object?> _release({
   };
 }
 
-Map<String, Object?> _asset(String name) {
+Map<String, Object?> _asset(String name, {int size = 42000000}) {
   final version = name.contains('v1.1.0') ? 'v1.1.0' : 'v1.2.0';
   return <String, Object?>{
     'name': name,
+    'size': size,
     'browser_download_url':
         'https://github.com/example/teleplayer/releases/download/$version/$name',
   };

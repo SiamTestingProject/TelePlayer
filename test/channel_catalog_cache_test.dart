@@ -237,4 +237,40 @@ void main() {
     );
   });
 
+  test('clearAll removes catalog metadata thumbnails and artwork', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'teleplayer-catalog-full-clean-test-',
+    );
+    final cache = ChannelCatalogCache(
+      directoryProvider: () async => directory,
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    const item = MediaItem(
+      id: '-1001:90:77',
+      chatId: -1001,
+      messageId: 90,
+      fileId: 77,
+      title: 'Disposable Cache Track',
+      fileName: 'disposable.flac',
+      mimeType: 'audio/flac',
+      size: 1000,
+      kind: MediaKind.audio,
+      thumbnailFileId: 88,
+    );
+    await cache.writeItems(const <MediaItem>[item]);
+    await cache.writeThumbnail(88, Uint8List.fromList(<int>[1, 2, 3]));
+    await cache.writeArtwork(item, Uint8List.fromList(<int>[4, 5, 6]));
+
+    await cache.clearAll();
+
+    expect(await cache.readItems(), isEmpty);
+    expect(await cache.readThumbnail(88), isNull);
+    expect(await cache.readArtwork(item), isNull);
+  });
+
 }

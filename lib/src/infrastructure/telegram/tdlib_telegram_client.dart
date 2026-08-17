@@ -23,6 +23,7 @@ class TdlibTelegramClient
         EmbeddedArtworkProvider,
         AudioTechnicalMetadataProvider,
         PlaybackCacheCleaner,
+        FullCacheCleaner,
         IncrementalMediaScanner,
         DirectPlaybackFileProvider {
   TdlibTelegramClient(
@@ -575,6 +576,80 @@ class TdlibTelegramClient
     }
   }
 
+  @override
+  Future<void> clearAllCachedFiles(Iterable<MediaItem> items) async {
+    final activeDownloads = _fullDownloadRequests.toSet();
+    _fullDownloadRequests.clear();
+    final mediaFileIds = <int>{};
+    final thumbnailFileIds = <int>{};
+    for (final item in items) {
+      if (item.fileId > 0) {
+        mediaFileIds.add(item.fileId);
+      }
+      final thumbnailId = item.thumbnailFileId;
+      if (thumbnailId != null && thumbnailId > 0) {
+        thumbnailFileIds.add(thumbnailId);
+      }
+      mediaFileIds.addAll(
+        item.parts.map((part) => part.fileId).where((fileId) => fileId > 0),
+      );
+    }
+
+    for (final fileId in activeDownloads) {
+      try {
+        await _gateway.send(
+          td.CancelDownloadFile(fileId: fileId, onlyIfPending: false),
+          timeout: const Duration(seconds: 10),
+        );
+      } catch (_) {
+        // The download may already have completed.
+      }
+    }
+
+    var optimized = false;
+    try {
+      await _gateway.send(
+        const td.OptimizeStorage(
+          size: 0,
+          ttl: 0,
+          count: 0,
+          immunityDelay: 0,
+          fileTypes: <td.FileType>[],
+          chatIds: <int>[],
+          excludeChatIds: <int>[],
+          returnDeletedFileStatistics: false,
+          chatLimit: 0,
+        ),
+        timeout: const Duration(minutes: 1),
+      );
+      optimized = true;
+    } catch (_) {
+      // Fall back to deleting each known media file below.
+    }
+
+    // With an empty file-type filter TDLib's storage optimizer removes normal
+    // downloaded media but deliberately leaves some thumbnail-like file types.
+    // Delete TelePlayer's known song thumbnails explicitly. If the optimizer
+    // failed, also delete every known song/part file as a fallback.
+    final fileIdsToDelete = <int>{
+      ...thumbnailFileIds,
+      if (!optimized) ...mediaFileIds,
+    };
+    for (final fileId in fileIdsToDelete) {
+      await _withFileDownloadLock(fileId, () async {
+        try {
+          await _gateway.send(
+            td.DeleteFile(fileId: fileId),
+            timeout: const Duration(seconds: 15),
+          );
+        } catch (_) {
+          // Continue cleaning the rest of the cache even if one TDLib file
+          // cannot be removed immediately.
+        }
+      });
+    }
+  }
+
   Future<T> _withFileDownloadLock<T>(
     int fileId,
     Future<T> Function() operation,
@@ -820,7 +895,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.4.16',
+        applicationVersion: '1.4.22',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),

@@ -9,6 +9,8 @@ enum AppUpdateStatus {
   upToDate,
   updateAvailable,
   opening,
+  downloading,
+  downloaded,
   error,
 }
 
@@ -21,6 +23,9 @@ class AppUpdateController extends ChangeNotifier {
   AppUpdate? _update;
   String? _currentVersion;
   String? _message;
+  AppUpdateDownloadProgress? _downloadProgress;
+  AppUpdateAsset? _downloadAsset;
+  String? _downloadedPath;
   bool _didCheckOnStartup = false;
   Future<AppUpdate?>? _activeCheck;
 
@@ -28,9 +33,13 @@ class AppUpdateController extends ChangeNotifier {
   AppUpdate? get update => _update;
   String? get currentVersion => _currentVersion;
   String? get message => _message;
+  AppUpdateDownloadProgress? get downloadProgress => _downloadProgress;
+  AppUpdateAsset? get downloadAssetSelection => _downloadAsset;
+  String? get downloadedPath => _downloadedPath;
   bool get isBusy =>
       _status == AppUpdateStatus.checking ||
-      _status == AppUpdateStatus.opening;
+      _status == AppUpdateStatus.opening ||
+      _status == AppUpdateStatus.downloading;
 
   Future<AppUpdate?> checkOnStartup() {
     if (_didCheckOnStartup) {
@@ -60,6 +69,9 @@ class AppUpdateController extends ChangeNotifier {
       final result = await _service.checkForUpdate();
       _currentVersion = result.currentVersion;
       _update = result.update;
+      _downloadProgress = null;
+      _downloadAsset = null;
+      _downloadedPath = null;
       if (result.update == null) {
         _status = AppUpdateStatus.upToDate;
         _message = result.hasPublishedRelease
@@ -78,6 +90,57 @@ class AppUpdateController extends ChangeNotifier {
     } finally {
       notifyListeners();
     }
+  }
+
+  Future<bool> downloadUpdateAsset(AppUpdateAsset asset) async {
+    if (_status == AppUpdateStatus.downloading) {
+      return false;
+    }
+    _status = AppUpdateStatus.downloading;
+    _message = null;
+    _downloadAsset = asset;
+    _downloadProgress = AppUpdateDownloadProgress(
+      receivedBytes: 0,
+      totalBytes: asset.sizeBytes,
+      bytesPerSecond: 0,
+      isComplete: false,
+    );
+    _downloadedPath = null;
+    notifyListeners();
+    try {
+      final path = await _service.downloadAsset(
+        asset,
+        onProgress: (progress) {
+          _downloadProgress = progress;
+          notifyListeners();
+        },
+      );
+      _downloadedPath = path;
+      _status = AppUpdateStatus.downloaded;
+      _message = '${asset.label} update downloaded.';
+      return true;
+    } catch (error) {
+      _status = AppUpdateStatus.error;
+      _message = _errorMessage(error);
+      return false;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  void clearDownloadedUpdateState() {
+    _downloadProgress = null;
+    _downloadAsset = null;
+    _downloadedPath = null;
+    if (_status == AppUpdateStatus.downloaded) {
+      _status = _update == null
+          ? AppUpdateStatus.idle
+          : AppUpdateStatus.updateAvailable;
+      _message = _update == null
+          ? null
+          : 'TelePlayer v${_update!.version} is available.';
+    }
+    notifyListeners();
   }
 
   Future<bool> openUpdate(AppUpdate update) async {
@@ -104,6 +167,6 @@ class AppUpdateController extends ChangeNotifier {
     if (error is AppUpdateException) {
       return error.message;
     }
-    return 'TelePlayer could not check for updates. Try again.';
+    return 'TelePlayer could not complete the update request. Try again.';
   }
 }

@@ -30,6 +30,8 @@ class PlayerController extends ChangeNotifier {
 
   audio.AudioPlayer? _audioPlayer;
   MediaItem? _item;
+  MediaItem? _activePlaybackItem;
+  Future<void> _playerMutationTail = Future<void>.value();
   Object? _error;
   bool _isOpening = false;
   bool _shuffleEnabled = false;
@@ -111,7 +113,6 @@ class PlayerController extends ChangeNotifier {
     Duration resumeAt = Duration.zero,
   }) async {
     final generation = ++_openGeneration;
-    final previousItem = _item;
     _cancelBufferingWatchdog();
     _isOpening = true;
     _error = null;
@@ -120,30 +121,51 @@ class PlayerController extends ChangeNotifier {
 
     final player = _ensurePlayer();
     try {
-      await player.stop();
-      if (previousItem != null &&
-          previousItem.messageKey != item.messageKey) {
-        unawaited(_clearPlaybackCache(previousItem));
-      }
+      // Resolve Telegram media before touching the native player. If the user
+      // taps another song while this request is in flight, the generation
+      // check below drops the stale request without racing two setAudioSources
+      // calls against ExoPlayer/Media3.
       final uri = await _libraryController.streamUriFor(item);
       if (generation != _openGeneration || _disposed) {
         return;
       }
-      _publishSystemMediaItem(item, generation);
-      final source = audio.AudioSource.uri(uri);
-      await player
-          .setAudioSources(
-            <audio.AudioSource>[source],
-            initialIndex: 0,
-            initialPosition: resumeAt,
-          )
-          .timeout(const Duration(seconds: 60));
+
+      MediaItem? playbackItemToClean;
+      await _withPlayerMutation(() async {
+        if (generation != _openGeneration || _disposed) {
+          return;
+        }
+        playbackItemToClean = _activePlaybackItem;
+        await player.stop();
+        if (generation != _openGeneration || _disposed) {
+          return;
+        }
+        final source = audio.AudioSource.uri(uri);
+        await player
+            .setAudioSources(
+              <audio.AudioSource>[source],
+              initialIndex: 0,
+              initialPosition: resumeAt,
+            )
+            .timeout(const Duration(seconds: 60));
+        if (generation != _openGeneration || _disposed) {
+          return;
+        }
+        await player.setLoopMode(
+          _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
+        );
+        _activePlaybackItem = item;
+      });
       if (generation != _openGeneration || _disposed) {
         return;
       }
-      await player.setLoopMode(
-        _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
-      );
+
+      final stalePlaybackItem = playbackItemToClean;
+      if (stalePlaybackItem != null &&
+          stalePlaybackItem.messageKey != item.messageKey) {
+        unawaited(_clearPlaybackCache(stalePlaybackItem));
+      }
+      _publishSystemMediaItem(item, generation);
       _recoveryBaseline = resumeAt;
       unawaited(_startPlayback(player, generation));
       unawaited(_upgradeToDirectPlaybackFile(item, generation));
@@ -286,50 +308,66 @@ class PlayerController extends ChangeNotifier {
     MediaItem item,
     int generation,
   ) async {
-    final directUri = await _libraryController.prepareDirectPlaybackUri(item);
-    if (directUri == null || directUri.scheme != 'file') {
-      return;
-    }
-    if (_disposed ||
-        generation != _openGeneration ||
-        _item?.messageKey != item.messageKey) {
-      return;
-    }
-
-    final localFile = File.fromUri(directUri);
-    if (!await localFile.exists()) {
-      return;
-    }
-
-    final player = _audioPlayer;
-    if (player == null) {
-      return;
-    }
-    final wasPlaying = player.playing;
-    final resumeAt = player.position;
     try {
-      // The initial localhost stream gives instant startup, but a Dart HTTP
-      // server is vulnerable to aggressive OEM background throttling. As soon
-      // as TDLib has the complete file, hand playback to ExoPlayer as file://
-      // so the rest of the track is native and no longer depends on Flutter's
-      // UI isolate staying schedulable in the background.
-      await player
-          .setAudioSources(
-            <audio.AudioSource>[audio.AudioSource.uri(directUri)],
-            initialIndex: 0,
-            initialPosition: resumeAt,
-          )
-          .timeout(const Duration(seconds: 20));
+      // This download is deliberately cancellable when the user changes
+      // tracks. Cancellation used to escape this unawaited future as an
+      // unhandled async error, which could terminate the app during rapid song
+      // switches. Keep the entire preparation/handoff inside this guard.
+      final directUri = await _libraryController.prepareDirectPlaybackUri(item);
+      if (directUri == null || directUri.scheme != 'file') {
+        return;
+      }
       if (_disposed ||
           generation != _openGeneration ||
           _item?.messageKey != item.messageKey) {
         return;
       }
-      await player.setLoopMode(
-        _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
-      );
-      if (wasPlaying) {
-        unawaited(_startPlayback(player, generation));
+
+      final localFile = File.fromUri(directUri);
+      if (!await localFile.exists()) {
+        return;
+      }
+
+      final player = _audioPlayer;
+      if (player == null) {
+        return;
+      }
+
+      await _withPlayerMutation(() async {
+        if (_disposed ||
+            generation != _openGeneration ||
+            _item?.messageKey != item.messageKey ||
+            _activePlaybackItem?.messageKey != item.messageKey) {
+          return;
+        }
+        final wasPlaying = player.playing;
+        final resumeAt = player.position;
+        // The initial localhost stream gives instant startup, but a Dart HTTP
+        // server is vulnerable to aggressive OEM background throttling. As
+        // soon as TDLib has the complete file, hand playback to ExoPlayer as a
+        // file:// source. Serializing this mutation with normal song switches
+        // prevents two native source replacements from racing each other.
+        await player
+            .setAudioSources(
+              <audio.AudioSource>[audio.AudioSource.uri(directUri)],
+              initialIndex: 0,
+              initialPosition: resumeAt,
+            )
+            .timeout(const Duration(seconds: 20));
+        if (_disposed ||
+            generation != _openGeneration ||
+            _item?.messageKey != item.messageKey) {
+          return;
+        }
+        await player.setLoopMode(
+          _repeatEnabled ? audio.LoopMode.one : audio.LoopMode.off,
+        );
+        if (wasPlaying) {
+          unawaited(_startPlayback(player, generation));
+        }
+      });
+      if (_disposed || generation != _openGeneration) {
+        return;
       }
       _systemMediaBridge?.refreshPlaybackState();
       _notify();
@@ -338,8 +376,9 @@ class PlayerController extends ChangeNotifier {
     } on audio.PlayerInterruptedException {
       // A user-initiated song change won the race with this background handoff.
     } catch (_) {
-      // Direct-file playback is a reliability upgrade, never a reason to stop
-      // an otherwise working stream.
+      // Direct-file preparation is optional and is commonly cancelled during
+      // a song switch. Never allow that background task to become an unhandled
+      // async error or crash an otherwise healthy player session.
     }
   }
 
@@ -373,8 +412,14 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> stopPlayback() async {
-    final currentItem = _item;
-    await _audioPlayer?.stop();
+    final player = _audioPlayer;
+    final currentItem = _activePlaybackItem ?? _item;
+    if (player != null) {
+      await _withPlayerMutation(() async {
+        await player.stop();
+        _activePlaybackItem = null;
+      });
+    }
     if (currentItem != null) {
       await _clearPlaybackCache(currentItem);
     }
@@ -550,6 +595,7 @@ class PlayerController extends ChangeNotifier {
     final next = _adjacentItem(1);
     if (next == null || next.messageKey == completedItem.messageKey) {
       await _audioPlayer?.stop();
+      _activePlaybackItem = null;
       await _clearPlaybackCache(completedItem);
       _notify();
       return;
@@ -654,6 +700,24 @@ class PlayerController extends ChangeNotifier {
             }
           }),
     );
+  }
+
+  Future<T> _withPlayerMutation<T>(Future<T> Function() operation) async {
+    final previous = _playerMutationTail;
+    final turn = Completer<void>();
+    _playerMutationTail = turn.future;
+    try {
+      try {
+        await previous;
+      } catch (_) {
+        // A failed earlier mutation must not poison the serialization queue.
+      }
+      return await operation();
+    } finally {
+      if (!turn.isCompleted) {
+        turn.complete();
+      }
+    }
   }
 
   Future<void> _clearPlaybackCache(MediaItem item) async {

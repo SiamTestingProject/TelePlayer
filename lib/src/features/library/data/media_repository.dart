@@ -1,7 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:path_provider/path_provider.dart';
+
 import '../../../core/errors/app_exception.dart';
+import '../../../core/services/local_cache_service.dart';
 import '../../../core/services/local_streaming_server.dart';
 import '../../../core/utils/embedded_artwork.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
@@ -286,6 +290,55 @@ class MediaRepository {
     }
   }
 
+  Future<void> clearAllCachedData(Iterable<MediaItem> knownItems) async {
+    await _streamingServer.stop();
+
+    final client = _telegramClient;
+    if (client is FullCacheCleaner) {
+      await (client as FullCacheCleaner).clearAllCachedFiles(knownItems);
+    } else if (client is PlaybackCacheCleaner) {
+      for (final item in knownItems) {
+        try {
+          await (client as PlaybackCacheCleaner).clearPlaybackCache(item);
+        } catch (_) {
+          // Keep cleaning the remaining files.
+        }
+      }
+    }
+
+    await _catalogCache.clearAll();
+    await LocalCacheService().clearAll();
+
+    final temporary = await getTemporaryDirectory();
+    await _deleteDirectory(
+      Directory(
+        '${temporary.path}${Platform.pathSeparator}teleplayer-system-artwork',
+      ),
+    );
+
+    final support = await getApplicationSupportDirectory();
+    final updateRoot = Platform.isAndroid
+        ? support
+        : (await getDownloadsDirectory()) ?? support;
+    await _deleteDirectory(
+      Directory(
+        '${updateRoot.path}${Platform.pathSeparator}TelePlayer'
+        '${Platform.pathSeparator}updates',
+      ),
+    );
+  }
+
+  Future<void> _deleteDirectory(Directory directory) async {
+    try {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    } on FileSystemException {
+      // Cache cleanup is best-effort; one locked file must not prevent the
+      // rest of the app cache from being removed.
+    }
+  }
+
   Future<Uri> _refreshAndRegister(MediaItem item) async {
     final refreshed = await _telegramClient.refreshMedia(item);
     return _streamingServer.register(refreshed);
@@ -301,7 +354,13 @@ class MediaRepository {
     // previews cannot remain stuck on the full-size Now Playing screen.
     final cachedArtwork = await _catalogCache.readArtwork(item);
     if (!retryRemote && cachedArtwork != null) {
-      return cachedArtwork;
+      // Library tiles can use any valid cached cover immediately, but the
+      // full-size player must not get permanently stuck with a tiny Telegram
+      // preview that happened to be cached first.
+      if (!preferHighResolution ||
+          EmbeddedArtwork.isHighResolution(cachedArtwork)) {
+        return cachedArtwork;
+      }
     }
 
     var inlineFallback = _decodeInlineThumbnail(item);

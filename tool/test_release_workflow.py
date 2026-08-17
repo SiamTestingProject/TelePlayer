@@ -25,6 +25,35 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn('RELEASE_TAG="build-$GITHUB_RUN_NUMBER"', workflow)
         self.assertIn('RELEASE_PRERELEASE="true"', workflow)
 
+    def test_android_builds_parallelize_expensive_release_outputs(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn("  android_apks:\n", workflow)
+        self.assertIn("  android_bundle:\n", workflow)
+        self.assertIn("  android:\n", workflow)
+        self.assertIn("needs: [android_apks, android_bundle]", workflow)
+        self.assertIn("Build Android ABI APKs", workflow)
+        self.assertIn("Build Android AAB + universal APK", workflow)
+
+    def test_android_uses_gradle_build_cache(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertGreaterEqual(workflow.count("uses: gradle/actions/setup-gradle@v6"), 2)
+        self.assertGreaterEqual(workflow.count("org.gradle.caching=true"), 2)
+        self.assertGreaterEqual(workflow.count("org.gradle.parallel=true"), 2)
+
+    def test_universal_apk_is_generated_from_aab_without_third_flutter_build(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn('BUNDLETOOL_VERSION: "1.18.3"', workflow)
+        self.assertIn("bundletool-all-${BUNDLETOOL_VERSION}.jar", workflow)
+        self.assertIn("--mode=universal", workflow)
+        self.assertIn('unzip -p "$APKS" universal.apk', workflow)
+        self.assertNotIn("- name: Build universal APK\n        run: flutter build apk", workflow)
+
+    def test_android_validation_runs_in_parallel_with_builds(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn("  quality:\n    name: Validate Flutter source", workflow)
+        self.assertIn("needs: [quality, android, windows]", workflow)
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -211,6 +211,16 @@ class ChannelCatalogCache {
     return bytes;
   }
 
+  Future<void> clearAll() async {
+    final support = await _directoryProvider();
+    final directory = Directory(
+      '${support.path}${Platform.pathSeparator}channel-catalog-cache',
+    );
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+  }
+
   Future<File> _catalogFile() async {
     final directory = await _cacheDirectory();
     return File('${directory.path}${Platform.pathSeparator}catalog.json');

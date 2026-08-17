@@ -45,4 +45,12 @@ class LocalCacheService {
       currentSize -= length;
     }
   }
+
+  Future<void> clearAll() async {
+    final directory = await getTemporaryDirectory();
+    final cache = Directory('${directory.path}/telegram-media-player');
+    if (await cache.exists()) {
+      await cache.delete(recursive: true);
+    }
+  }
 }

@@ -12,7 +12,7 @@ class TdlibDeviceIdentityTest(unittest.TestCase):
         self.assertIn("if (io.Platform.isAndroid)", source)
         self.assertIn("return 'TelePlayer';", source)
         self.assertNotIn("return 'Flutter Android';", source)
-        self.assertIn("applicationVersion: '1.4.16'", source)
+        self.assertIn("applicationVersion: '1.4.22'", source)
 
 
 if __name__ == '__main__':

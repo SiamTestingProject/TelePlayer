@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
+import '../../../core/errors/app_exception.dart';
 import '../../update/application/app_update_controller.dart';
 import '../../update/presentation/app_update_sheet.dart';
 import '../models/app_settings.dart';
@@ -243,6 +244,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   bool _preferWifi = true;
   bool _seeded = false;
   bool _saving = false;
+  bool _cleaning = false;
 
   @override
   void didChangeDependencies() {
@@ -269,7 +271,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       subtitle: 'Streaming and temporary storage',
       icon: Icons.tune_rounded,
       saving: _saving,
-      onSave: _saving ? null : () => unawaited(_save()),
+      onSave: _saving || _cleaning ? null : () => unawaited(_save()),
       children: <Widget>[
         const _SettingsInfoCard(
           icon: Icons.cleaning_services_rounded,
@@ -321,8 +323,90 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
             trailing: const Icon(Icons.chevron_right_rounded),
           ),
         ),
+        const SizedBox(height: 14),
+        _FullCacheCleanupCard(
+          cleaning: _cleaning,
+          onPressed: _cleaning ? null : () => unawaited(_confirmAndClean()),
+        ),
       ],
     );
+  }
+
+  Future<void> _confirmAndClean() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final colors = Theme.of(dialogContext).colorScheme;
+        return AlertDialog(
+          icon: Icon(Icons.delete_forever_rounded, color: colors.error),
+          title: const Text('Fully clean everything?'),
+          content: const Text(
+            'This removes all cached song audio, album artwork, thumbnails, '
+            'the local library catalog, temporary player files, and downloaded '
+            'app updates. Your Telegram account, API settings, channel list, '
+            'and liked songs are kept.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.error,
+                foregroundColor: colors.onError,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Fully clean'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    final scope = AppScope.of(context);
+    if (scope.updateController.status == AppUpdateStatus.downloading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Wait for the current app update download to finish.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _cleaning = true);
+    try {
+      await scope.playerController.stopPlayback();
+      await scope.libraryController.clearAllCachedData();
+      scope.updateController.clearDownloadedUpdateState();
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All TelePlayer cached data has been cleaned.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error is AppException && error.message != null
+          ? error.message!
+          : 'TelePlayer could not completely clean the cache. Try again.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _cleaning = false);
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -353,6 +437,79 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   }
 }
 
+
+class _FullCacheCleanupCard extends StatelessWidget {
+  const _FullCacheCleanupCard({
+    required this.cleaning,
+    required this.onPressed,
+  });
+
+  final bool cleaning;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.errorContainer.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: colors.error.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(Icons.delete_sweep_rounded, color: colors.error),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Fully clean everything',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Remove every TelePlayer cache: downloaded song data, '
+                      'artwork, thumbnails, library catalog, temporary player '
+                      'files, and downloaded updates.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.error,
+              foregroundColor: colors.onError,
+              minimumSize: const Size.fromHeight(50),
+            ),
+            onPressed: onPressed,
+            icon: cleaning
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_forever_rounded),
+            label: Text(cleaning ? 'Cleaning…' : 'Fully clean everything'),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class BackgroundActivitySettingsPage extends StatefulWidget {
   const BackgroundActivitySettingsPage({super.key});
@@ -539,7 +696,7 @@ class UpdatesSettingsPage extends StatelessWidget {
           icon: Icons.verified_user_outlined,
           title: 'Release source',
           body:
-              'TelePlayer checks the configured GitHub repository for newer stable releases and opens the matching installer or APK when one is available.',
+              'TelePlayer checks the configured GitHub repository for newer stable releases. On Android, choose ARM64, ARM32, x86_64, or Universal and download the APK directly inside TelePlayer.',
         ),
       ],
     );
@@ -937,6 +1094,8 @@ class _AppUpdateTile extends StatelessWidget {
           AppUpdateStatus.error =>
             controller.message ?? 'The update check failed.',
           AppUpdateStatus.opening => 'Opening the update download...',
+          AppUpdateStatus.downloading => 'Downloading the selected update...',
+          AppUpdateStatus.downloaded => controller.message ?? 'Update downloaded.',
           AppUpdateStatus.idle => 'Check for a newer GitHub release',
         };
         return Material(

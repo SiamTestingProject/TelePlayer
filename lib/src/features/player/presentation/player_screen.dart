@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show TickerCanceled;
 
 import '../../../app/app_scope.dart';
 import '../../../app/error_panel.dart';
@@ -10,108 +11,318 @@ import '../../library/models/media_item.dart';
 import '../../library/presentation/media_artwork.dart';
 import '../application/player_controller.dart';
 
-class PlayerScreen extends StatelessWidget {
+class PlayerScreen extends StatefulWidget {
   const PlayerScreen({required this.onClose, super.key});
 
   final VoidCallback onClose;
+
+  @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen>
+    with SingleTickerProviderStateMixin {
+  static const double _dismissDistanceFraction = 0.18;
+  static const double _dismissVelocity = 720;
+  static const Duration _snapBackDuration = Duration(milliseconds: 280);
+  static const Duration _dismissDuration = Duration(milliseconds: 300);
+
+  late final AnimationController _verticalController;
+  Animation<double>? _verticalAnimation;
+  double _verticalOffset = 0;
+  double _viewportHeight = 1;
+  bool _dismissInProgress = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _verticalController = AnimationController(vsync: this)
+      ..addListener(_tickVerticalAnimation);
+  }
+
+  @override
+  void dispose() {
+    _verticalController
+      ..removeListener(_tickVerticalAnimation)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _tickVerticalAnimation() {
+    final animation = _verticalAnimation;
+    if (!mounted || animation == null) {
+      return;
+    }
+    setState(() => _verticalOffset = animation.value);
+  }
+
+  void _handleVerticalDragStart(DragStartDetails _) {
+    if (_dismissInProgress) {
+      return;
+    }
+    _verticalController.stop();
+    _verticalAnimation = null;
+  }
+
+  void _handleVerticalDragUpdate(DragUpdateDetails details) {
+    if (_dismissInProgress) {
+      return;
+    }
+    final delta = details.primaryDelta ?? details.delta.dy;
+    var nextOffset = _verticalOffset + delta;
+    if (nextOffset < 0) {
+      // Upward movement should not scroll the fixed Now Playing page. A small
+      // resistance keeps the gesture feeling physical without exposing empty
+      // space above the player.
+      nextOffset *= 0.08;
+    }
+    nextOffset = nextOffset.clamp(0.0, _viewportHeight + 80).toDouble();
+    if ((nextOffset - _verticalOffset).abs() < 0.1) {
+      return;
+    }
+    setState(() => _verticalOffset = nextOffset);
+  }
+
+  void _handleVerticalDragCancel() {
+    if (_dismissInProgress) {
+      return;
+    }
+    unawaited(_animateVerticalOffset(0, duration: _snapBackDuration));
+  }
+
+  void _handleVerticalDragEnd(DragEndDetails details) {
+    if (_dismissInProgress) {
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldDismiss =
+        _verticalOffset >= _viewportHeight * _dismissDistanceFraction ||
+        velocity >= _dismissVelocity;
+    if (shouldDismiss) {
+      unawaited(_dismissPlayer());
+    } else {
+      unawaited(_animateVerticalOffset(0, duration: _snapBackDuration));
+    }
+  }
+
+  Future<void> _animateVerticalOffset(
+    double target, {
+    required Duration duration,
+    Curve curve = Curves.easeOutCubic,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    _verticalController.stop();
+    _verticalController.duration = duration;
+    _verticalAnimation = Tween<double>(
+      begin: _verticalOffset,
+      end: target,
+    ).animate(
+      CurvedAnimation(
+        parent: _verticalController,
+        curve: curve,
+      ),
+    );
+    try {
+      await _verticalController.forward(from: 0).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+  }
+
+  Future<void> _dismissPlayer() async {
+    if (_dismissInProgress || !mounted) {
+      return;
+    }
+    setState(() {
+      _dismissInProgress = true;
+    });
+    // Reveal the previous app page immediately, then let this surface finish
+    // sliding over it. AnimatedSwitcher keeps the outgoing player mounted for
+    // long enough to complete this local transition.
+    widget.onClose();
+    await _animateVerticalOffset(
+      _viewportHeight + 72,
+      duration: _dismissDuration,
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final player = scope.playerController;
     final item = player.item;
+    final backdrop = Theme.of(context).colorScheme.surface;
 
-    return Scaffold(
-      backgroundColor: _PlayerPalette.background,
-      body: ColoredBox(
-        color: _PlayerPalette.background,
-        child: SafeArea(
-          child: item == null
-              ? _EmptyPlayer(onClose: onClose)
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    // The Now Playing surface is intentionally a fixed,
-                    // non-scrollable player. On shorter displays the complete
-                    // composition scales down uniformly instead of becoming a
-                    // vertical scroll view.
-                    final canvasWidth = math.min(
-                      588.0,
-                      math.max(320.0, constraints.maxWidth),
-                    );
-                    final items = scope.libraryController.items;
-                    return SizedBox.expand(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: canvasWidth,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                _PlayerHeader(
-                                  onClose: onClose,
-                                  onQueue: () => _showQueue(context),
+    return LayoutBuilder(
+      builder: (context, viewportConstraints) {
+        _viewportHeight = math.max(1.0, viewportConstraints.maxHeight);
+        final progress = (_verticalOffset / _viewportHeight).clamp(0.0, 1.0).toDouble();
+        final scale = 1 - (progress * 0.018);
+        final radius = 34 * progress;
+
+        return ColoredBox(
+          color: Color.lerp(_PlayerPalette.background, backdrop, 0.78)!,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: _handleVerticalDragStart,
+            onVerticalDragUpdate: _handleVerticalDragUpdate,
+            onVerticalDragEnd: _handleVerticalDragEnd,
+            onVerticalDragCancel: _handleVerticalDragCancel,
+            child: Transform.translate(
+              offset: Offset(0, _verticalOffset),
+              child: Transform.scale(
+                scale: scale,
+                alignment: Alignment.topCenter,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(radius),
+                  ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      boxShadow: progress == 0
+                          ? const <BoxShadow>[]
+                          : <BoxShadow>[
+                              BoxShadow(
+                                color: Colors.black.withValues(
+                                  alpha: 0.22 * progress,
                                 ),
-                                const SizedBox(height: 28),
-                                _ArtworkCarousel(
-                                  item: item,
-                                  nextItem: _adjacentLibraryItem(
-                                    item,
-                                    items,
-                                    1,
-                                  ),
-                                  previousItem: _adjacentLibraryItem(
-                                    item,
-                                    items,
-                                    -1,
-                                  ),
-                                ),
-                                const SizedBox(height: 44),
-                                _TrackIdentity(
-                                  item: item,
-                                  onDetails: () => _showSongDetails(context, item),
-                                ),
-                                const SizedBox(height: 24),
-                                if (player.error != null) ...<Widget>[
-                                  Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: Theme.of(context)
-                                          .colorScheme
-                                          .copyWith(
-                                            surface: _PlayerPalette.darkSurface,
-                                            onSurface: _PlayerPalette.text,
-                                            onSurfaceVariant:
-                                                _PlayerPalette.secondaryText,
+                                blurRadius: 26,
+                                offset: const Offset(0, -8),
+                              ),
+                            ],
+                    ),
+                    child: Scaffold(
+                      backgroundColor: _PlayerPalette.background,
+                      body: ColoredBox(
+                        color: _PlayerPalette.background,
+                        child: SafeArea(
+                          child: item == null
+                              ? _EmptyPlayer(
+                                  onClose: () => unawaited(_dismissPlayer()),
+                                )
+                              : LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    // The Now Playing surface remains a fixed,
+                                    // non-scrollable player. A downward swipe
+                                    // moves the whole surface instead of
+                                    // scrolling its internal content.
+                                    final canvasWidth = math.min(
+                                      588.0,
+                                      math.max(320.0, constraints.maxWidth),
+                                    );
+                                    final items = scope.libraryController.items;
+                                    return SizedBox.expand(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.topCenter,
+                                        child: SizedBox(
+                                          width: canvasWidth,
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              24,
+                                              10,
+                                              24,
+                                              18,
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: <Widget>[
+                                                _PlayerHeader(
+                                                  onClose: () => unawaited(
+                                                    _dismissPlayer(),
+                                                  ),
+                                                  onQueue: () =>
+                                                      _showQueue(context),
+                                                ),
+                                                const SizedBox(height: 28),
+                                                _ArtworkCarousel(
+                                                  item: item,
+                                                  nextItem: _adjacentLibraryItem(
+                                                    item,
+                                                    items,
+                                                    1,
+                                                  ),
+                                                  previousItem:
+                                                      _adjacentLibraryItem(
+                                                    item,
+                                                    items,
+                                                    -1,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 44),
+                                                _TrackIdentity(
+                                                  item: item,
+                                                  onDetails: () =>
+                                                      _showSongDetails(
+                                                    context,
+                                                    item,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 24),
+                                                if (player.error != null) ...<Widget>[
+                                                  Theme(
+                                                    data: Theme.of(context)
+                                                        .copyWith(
+                                                      colorScheme:
+                                                          Theme.of(context)
+                                                              .colorScheme
+                                                              .copyWith(
+                                                        surface: _PlayerPalette
+                                                            .darkSurface,
+                                                        onSurface:
+                                                            _PlayerPalette.text,
+                                                        onSurfaceVariant:
+                                                            _PlayerPalette
+                                                                .secondaryText,
+                                                      ),
+                                                    ),
+                                                    child: ErrorPanel(
+                                                      error: player.error!,
+                                                      onAction: () => unawaited(
+                                                        player.open(item),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 16),
+                                                ],
+                                                _ProgressSection(
+                                                  player: player,
+                                                  item: item,
+                                                ),
+                                                const SizedBox(height: 48),
+                                                _PrimaryControls(player: player),
+                                                const SizedBox(height: 18),
+                                                Padding(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 26,
+                                                  ),
+                                                  child: _PlaybackModes(
+                                                    player: player,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                    ),
-                                    child: ErrorPanel(
-                                      error: player.error!,
-                                      onAction: () => unawaited(player.open(item)),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                ],
-                                _ProgressSection(player: player, item: item),
-                                const SizedBox(height: 48),
-                                _PrimaryControls(player: player),
-                                const SizedBox(height: 18),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 26),
-                                  child: _PlaybackModes(player: player),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
-                              ],
-                            ),
-                          ),
                         ),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
-        ),
-      ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -342,35 +553,206 @@ class _ArtworkCarousel extends StatefulWidget {
   State<_ArtworkCarousel> createState() => _ArtworkCarouselState();
 }
 
-class _ArtworkCarouselState extends State<_ArtworkCarousel> {
-  static const double _velocityThreshold = 420;
-  double _dragOffset = 0;
+class _ArtworkCarouselState extends State<_ArtworkCarousel>
+    with SingleTickerProviderStateMixin {
+  static const double _velocityThreshold = 520;
+  static const Duration _settleDuration = Duration(milliseconds: 360);
 
-  void _updateDrag(DragUpdateDetails details, double artworkSize) {
-    setState(() {
-      _dragOffset = (_dragOffset + details.delta.dx)
-          .clamp(-artworkSize * 0.34, artworkSize * 0.34)
-          .toDouble();
-    });
+  late final AnimationController _settleController;
+  late MediaItem _displayedItem;
+  MediaItem? _displayedNext;
+  MediaItem? _displayedPrevious;
+  MediaItem? _transitionItem;
+  double _transitionDirection = -1;
+  String? _pendingSwipeKey;
+  Animation<double>? _offsetAnimation;
+  double _dragOffset = 0;
+  double _travel = 1;
+  int _animationGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayedItem = widget.item;
+    _displayedNext = widget.nextItem;
+    _displayedPrevious = widget.previousItem;
+    _settleController = AnimationController(
+      vsync: this,
+      duration: _settleDuration,
+    )..addListener(() {
+        final animation = _offsetAnimation;
+        if (animation == null || !mounted) {
+          return;
+        }
+        setState(() => _dragOffset = animation.value);
+      });
+    _schedulePrefetchVisibleArtwork();
   }
 
-  void _finishDrag(DragEndDetails details, double artworkSize) {
-    final velocity = details.primaryVelocity ?? 0;
-    final crossedDistance = _dragOffset.abs() >= artworkSize * 0.16;
-    final crossedVelocity = velocity.abs() >= _velocityThreshold;
-    final direction = velocity.abs() >= _velocityThreshold
-        ? velocity.sign
-        : _dragOffset.sign;
+  @override
+  void didUpdateWidget(covariant _ArtworkCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _schedulePrefetchVisibleArtwork();
 
-    setState(() => _dragOffset = 0);
-    if (!crossedDistance && !crossedVelocity) {
+    if (widget.item.messageKey == _displayedItem.messageKey) {
+      _displayedNext = widget.nextItem;
+      _displayedPrevious = widget.previousItem;
       return;
     }
 
-    final target = direction < 0 ? widget.nextItem : widget.previousItem;
-    if (target != null) {
-      unawaited(AppScope.of(context).playerController.open(target));
+    if (_pendingSwipeKey == widget.item.messageKey) {
+      // The swipe animation has already moved this cover fully into place.
+      // Adopt the controller's new item without a second jump/animation.
+      _animationGeneration++;
+      _settleController.stop();
+      _offsetAnimation = null;
+      _transitionItem = null;
+      _pendingSwipeKey = null;
+      _dragOffset = 0;
+      _displayedItem = widget.item;
+      _displayedNext = widget.nextItem;
+      _displayedPrevious = widget.previousItem;
+      return;
     }
+
+    // Previous/next buttons and queue selection update PlayerController before
+    // this widget is rebuilt. Keep the old artwork on screen and carousel it
+    // toward the new one rather than replacing it abruptly.
+    final direction = widget.item.messageKey == _displayedPrevious?.messageKey
+        ? 1.0
+        : -1.0;
+    _transitionItem = widget.item;
+    _transitionDirection = direction;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.item.messageKey == _displayedItem.messageKey) {
+        return;
+      }
+      unawaited(_animateExternalSwitch(direction));
+    });
+  }
+
+  Future<void> _prefetchArtwork(MediaItem? item) async {
+    if (item == null || !mounted) {
+      return;
+    }
+    try {
+      await AppScope.of(context).libraryController.thumbnailFor(
+            item,
+            highQuality: true,
+          );
+    } catch (_) {
+      // Artwork is optional. MediaArtwork will retry independently if a
+      // Telegram thumbnail was temporarily unavailable.
+    }
+  }
+
+  void _schedulePrefetchVisibleArtwork() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _prefetchVisibleArtwork();
+      }
+    });
+  }
+
+  void _prefetchVisibleArtwork() {
+    unawaited(_prefetchArtwork(widget.item));
+    unawaited(_prefetchArtwork(widget.nextItem));
+    unawaited(_prefetchArtwork(widget.previousItem));
+  }
+
+  void _updateDrag(DragUpdateDetails details) {
+    if (_transitionItem != null || _settleController.isAnimating) {
+      return;
+    }
+    final nextOffset = (_dragOffset + details.delta.dx)
+        .clamp(-_travel, _travel)
+        .toDouble();
+    // Do not let the user drag into an empty side of the queue.
+    if (nextOffset < 0 && _displayedNext == null) {
+      return;
+    }
+    if (nextOffset > 0 && _displayedPrevious == null) {
+      return;
+    }
+    setState(() => _dragOffset = nextOffset);
+  }
+
+  Future<void> _finishDrag(DragEndDetails details) async {
+    if (_transitionItem != null || _settleController.isAnimating) {
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    final crossedDistance = _dragOffset.abs() >= _travel * 0.17;
+    final crossedVelocity = velocity.abs() >= _velocityThreshold;
+    final direction = crossedVelocity ? velocity.sign : _dragOffset.sign;
+    final target = direction < 0 ? _displayedNext : _displayedPrevious;
+
+    if ((!crossedDistance && !crossedVelocity) || target == null) {
+      await _animateOffset(_dragOffset, 0);
+      return;
+    }
+
+    // Complete the visual movement first. This makes the narrow preview become
+    // the full-size cover with no snap, then PlayerController changes tracks.
+    final destination = direction < 0 ? -_travel : _travel;
+    final targetKey = target.messageKey;
+    _pendingSwipeKey = targetKey;
+    await _animateOffset(_dragOffset, destination);
+    if (!mounted || _pendingSwipeKey != targetKey) {
+      return;
+    }
+    unawaited(AppScope.of(context).playerController.open(target));
+  }
+
+  Future<void> _animateExternalSwitch(double direction) async {
+    final target = _transitionItem;
+    if (target == null) {
+      return;
+    }
+    final generation = ++_animationGeneration;
+    final destination = direction < 0 ? -_travel : _travel;
+    await _animateOffset(0, destination);
+    if (!mounted || generation != _animationGeneration) {
+      return;
+    }
+    setState(() {
+      _displayedItem = target;
+      _displayedNext = widget.nextItem;
+      _displayedPrevious = widget.previousItem;
+      _transitionItem = null;
+      _dragOffset = 0;
+      _offsetAnimation = null;
+    });
+  }
+
+  Future<void> _animateOffset(double from, double to) async {
+    _settleController.stop();
+    _settleController.reset();
+    _offsetAnimation = Tween<double>(begin: from, end: to).animate(
+      CurvedAnimation(
+        parent: _settleController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    try {
+      await _settleController.forward().orCancel;
+    } on TickerCanceled {
+      // A newer track change superseded this animation.
+    }
+  }
+
+  void _cancelDrag() {
+    if (_settleController.isAnimating || _transitionItem != null) {
+      return;
+    }
+    unawaited(_animateOffset(_dragOffset, 0));
+  }
+
+  @override
+  void dispose() {
+    _animationGeneration++;
+    _settleController.dispose();
+    super.dispose();
   }
 
   @override
@@ -378,74 +760,70 @@ class _ArtworkCarouselState extends State<_ArtworkCarousel> {
     final library = AppScope.of(context).libraryController;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (widget.nextItem == null) {
-          final size = constraints.maxWidth.clamp(240.0, 430.0).toDouble();
-          return Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragUpdate: (details) => _updateDrag(details, size),
-              onHorizontalDragEnd: (details) => _finishDrag(details, size),
-              onHorizontalDragCancel: () => setState(() => _dragOffset = 0),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOutCubic,
-                transform: Matrix4.translationValues(_dragOffset, 0, 0),
-                child: SizedBox.square(
-                  dimension: size,
-                  child: MediaArtwork(
-                    item: widget.item,
-                    libraryController: library,
-                    borderRadius: 28,
-                    iconSize: 76,
-                    highQuality: true,
-                  ),
-                ),
-              ),
-            ),
-          );
+        const gap = 10.0;
+        final hasPreview = _displayedNext != null || _transitionItem != null;
+        final previewWidth = hasPreview
+            ? (constraints.maxWidth * 0.17).clamp(54.0, 82.0).toDouble()
+            : 0.0;
+        final artworkSize = hasPreview
+            ? constraints.maxWidth - previewWidth - gap
+            : constraints.maxWidth.clamp(240.0, 430.0).toDouble();
+        _travel = artworkSize + gap;
+
+        MediaItem? rightItem;
+        MediaItem? leftItem;
+        if (_transitionItem != null) {
+          if (_transitionDirection > 0) {
+            leftItem = _transitionItem;
+          } else {
+            rightItem = _transitionItem;
+          }
+        } else {
+          rightItem = _displayedNext;
+          leftItem = _displayedPrevious;
         }
 
-        const gap = 10.0;
-        final previewWidth = (constraints.maxWidth * 0.17)
-            .clamp(54.0, 82.0)
-            .toDouble();
-        final artworkSize = constraints.maxWidth - previewWidth - gap;
+        Widget artwork(MediaItem item) => SizedBox.square(
+              dimension: artworkSize,
+              child: MediaArtwork(
+                key: ValueKey<String>('player-art-${item.messageKey}'),
+                item: item,
+                libraryController: library,
+                borderRadius: 28,
+                iconSize: 76,
+                highQuality: true,
+              ),
+            );
+
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onHorizontalDragUpdate: (details) =>
-              _updateDrag(details, artworkSize),
-          onHorizontalDragEnd: (details) =>
-              _finishDrag(details, artworkSize),
-          onHorizontalDragCancel: () => setState(() => _dragOffset = 0),
-          child: SizedBox(
-            height: artworkSize,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              transform: Matrix4.translationValues(_dragOffset * 0.22, 0, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          onHorizontalDragUpdate: _updateDrag,
+          onHorizontalDragEnd: _finishDrag,
+          onHorizontalDragCancel: _cancelDrag,
+          child: ClipRect(
+            child: SizedBox(
+              width: constraints.maxWidth,
+              height: artworkSize,
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
                 children: <Widget>[
-                  Expanded(
-                    child: MediaArtwork(
-                      item: widget.item,
-                      libraryController: library,
-                      borderRadius: 28,
-                      iconSize: 76,
-                      highQuality: true,
+                  if (leftItem != null)
+                    Positioned(
+                      left: -_travel + _dragOffset,
+                      top: 0,
+                      child: artwork(leftItem),
                     ),
+                  Positioned(
+                    left: _dragOffset,
+                    top: 0,
+                    child: artwork(_displayedItem),
                   ),
-                  const SizedBox(width: gap),
-                  SizedBox(
-                    width: previewWidth,
-                    child: MediaArtwork(
-                      item: widget.nextItem!,
-                      libraryController: library,
-                      borderRadius: 28,
-                      iconSize: 40,
-                      highQuality: true,
+                  if (rightItem != null)
+                    Positioned(
+                      left: _travel + _dragOffset,
+                      top: 0,
+                      child: artwork(rightItem),
                     ),
-                  ),
                 ],
               ),
             ),

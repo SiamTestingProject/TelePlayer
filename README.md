@@ -84,9 +84,11 @@ dependencies need API 34 or newer even though `tdlib` 1.6.0 still declares API
 
 TelePlayer checks stable GitHub Releases once after startup. A manual check is
 also available from **Settings > App updates**. When a newer semantic version is
-available, the app shows a draggable Material 3 changelog sheet and opens the
-universal APK on Android or the Inno Setup installer on Windows. If that
-platform asset is missing, it opens the GitHub Release page instead.
+available, the app shows a draggable Material 3 changelog sheet. Android users
+can choose ARM64, ARM32, x86_64, or Universal and download the APK directly
+inside TelePlayer with a live wave progress indicator, percentage, transferred
+size, total size, and download speed. Windows continues to open the matching
+Inno Setup installer.
 
 If GitHub has no public stable release yet, the updater reports that normal
 state instead of showing the Releases API's `404` response as an app error.
@@ -104,21 +106,21 @@ components and required permissions from `tool/configure_app_identity.py`.
 Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together. A push to `main` creates or updates the stable semantic
-release for the version in `pubspec.yaml` (for example `v1.4.16`). Non-main
+release for the version in `pubspec.yaml` (for example `v1.4.22`). Non-main
 branches use `build-<run number>` prereleases. You can also push a matching
-version tag such as `v1.4.16` explicitly.
+version tag such as `v1.4.22` explicitly.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.4.16.apk`
-- `TelePlayer-v1.4.16-arm64.apk`
-- `TelePlayer-v1.4.16-armeabi-v7a.apk`
-- `TelePlayer-v1.4.16-x86_64.apk`
-- `TelePlayer-v1.4.16-aab.aab`
-- `TelePlayer-v1.4.16-Setup.exe`
-- `TelePlayer-v1.4.16-windows-x64.zip`
+- `TelePlayer-v1.4.22.apk`
+- `TelePlayer-v1.4.22-arm64.apk`
+- `TelePlayer-v1.4.22-armeabi-v7a.apk`
+- `TelePlayer-v1.4.22-x86_64.apk`
+- `TelePlayer-v1.4.22-aab.aab`
+- `TelePlayer-v1.4.22-Setup.exe`
+- `TelePlayer-v1.4.22-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

@@ -30,6 +30,26 @@ void main() {
       ),
       isDirectDownload: true,
       prerelease: false,
+      assets: <AppUpdateAsset>[
+        AppUpdateAsset(
+          name: 'TelePlayer-v1.2.0-arm64.apk',
+          uri: Uri.parse(
+            'https://github.com/example/teleplayer/releases/download/'
+            'v1.2.0/TelePlayer-v1.2.0-arm64.apk',
+          ),
+          sizeBytes: 41000000,
+          type: AppUpdateAssetType.arm64,
+        ),
+        AppUpdateAsset(
+          name: 'TelePlayer-v1.2.0-armeabi-v7a.apk',
+          uri: Uri.parse(
+            'https://github.com/example/teleplayer/releases/download/'
+            'v1.2.0/TelePlayer-v1.2.0-armeabi-v7a.apk',
+          ),
+          sizeBytes: 33000000,
+          type: AppUpdateAssetType.arm32,
+        ),
+      ],
     );
     addTearDown(controller.dispose);
 
@@ -63,6 +83,11 @@ void main() {
 
     expect(find.text('Changelog'), findsOneWidget);
     expect(find.text('v1.2.0'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Choose Android version'));
+    await tester.pump();
+    expect(find.textContaining('ARM64'), findsWidgets);
+    expect(find.textContaining('ARM32'), findsWidgets);
 
     await tester.ensureVisible(find.text("What's New"));
     await tester.pump();

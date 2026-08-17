@@ -57,10 +57,40 @@ class SettingsNavigationAndPlaybackCleanupTest(unittest.TestCase):
         player = (
             ROOT / 'lib/src/features/player/application/player_controller.dart'
         ).read_text(encoding='utf-8')
-        self.assertIn('previousItem.messageKey != item.messageKey', player)
-        self.assertIn('unawaited(_clearPlaybackCache(previousItem))', player)
+        self.assertIn('stalePlaybackItem.messageKey != item.messageKey', player)
+        self.assertIn('unawaited(_clearPlaybackCache(stalePlaybackItem))', player)
+        self.assertIn('_activePlaybackItem = item', player)
         self.assertIn('_advanceAfterCompletion(completedItem)', player)
         self.assertIn('await _clearPlaybackCache(completedItem)', player)
+
+    def test_full_cache_cleanup_is_available_and_sweeps_all_app_caches(self):
+        settings = (
+            ROOT / 'lib/src/features/settings/presentation/settings_screen.dart'
+        ).read_text(encoding='utf-8')
+        controller = (
+            ROOT / 'lib/src/features/library/application/media_library_controller.dart'
+        ).read_text(encoding='utf-8')
+        repository = (
+            ROOT / 'lib/src/features/library/data/media_repository.dart'
+        ).read_text(encoding='utf-8')
+        client = (
+            ROOT / 'lib/src/infrastructure/telegram/telegram_client.dart'
+        ).read_text(encoding='utf-8')
+        tdlib = (
+            ROOT / 'lib/src/infrastructure/telegram/tdlib_telegram_client.dart'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('Fully clean everything', settings)
+        self.assertIn('scope.playerController.stopPlayback()', settings)
+        self.assertIn('scope.libraryController.clearAllCachedData()', settings)
+        self.assertIn('clearAllCachedData()', controller)
+        self.assertIn('_catalogCache.clearAll()', repository)
+        self.assertIn('teleplayer-system-artwork', repository)
+        self.assertIn('TelePlayer', repository)
+        self.assertIn('abstract interface class FullCacheCleaner', client)
+        self.assertIn('Future<void> clearAllCachedFiles', tdlib)
+        self.assertIn('td.OptimizeStorage(', tdlib)
+
 
 
 if __name__ == '__main__':

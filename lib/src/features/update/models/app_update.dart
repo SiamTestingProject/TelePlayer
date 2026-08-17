@@ -87,6 +87,62 @@ class AppVersion implements Comparable<AppVersion> {
   }
 }
 
+enum AppUpdateAssetType {
+  universal,
+  arm64,
+  arm32,
+  x86_64,
+  windowsInstaller,
+  other,
+}
+
+class AppUpdateAsset {
+  const AppUpdateAsset({
+    required this.name,
+    required this.uri,
+    required this.sizeBytes,
+    required this.type,
+  });
+
+  final String name;
+  final Uri uri;
+  final int? sizeBytes;
+  final AppUpdateAssetType type;
+
+  String get label => switch (type) {
+        AppUpdateAssetType.arm64 => 'ARM64',
+        AppUpdateAssetType.arm32 => 'ARM32',
+        AppUpdateAssetType.x86_64 => 'x86_64',
+        AppUpdateAssetType.universal => 'Universal',
+        AppUpdateAssetType.windowsInstaller => 'Windows',
+        AppUpdateAssetType.other => name,
+      };
+}
+
+class AppUpdateDownloadProgress {
+  const AppUpdateDownloadProgress({
+    required this.receivedBytes,
+    required this.totalBytes,
+    required this.bytesPerSecond,
+    required this.isComplete,
+    this.localPath,
+  });
+
+  final int receivedBytes;
+  final int? totalBytes;
+  final double bytesPerSecond;
+  final bool isComplete;
+  final String? localPath;
+
+  double? get fraction {
+    final total = totalBytes;
+    if (total == null || total <= 0) {
+      return null;
+    }
+    return (receivedBytes / total).clamp(0.0, 1.0).toDouble();
+  }
+}
+
 class AppUpdate {
   const AppUpdate({
     required this.version,
@@ -98,6 +154,7 @@ class AppUpdate {
     required this.downloadUri,
     required this.isDirectDownload,
     required this.prerelease,
+    this.assets = const <AppUpdateAsset>[],
   });
 
   final String version;
@@ -109,6 +166,35 @@ class AppUpdate {
   final Uri downloadUri;
   final bool isDirectDownload;
   final bool prerelease;
+  final List<AppUpdateAsset> assets;
+
+  List<AppUpdateAsset> get androidAssets => assets
+      .where(
+        (asset) => const <AppUpdateAssetType>{
+          AppUpdateAssetType.universal,
+          AppUpdateAssetType.arm64,
+          AppUpdateAssetType.arm32,
+          AppUpdateAssetType.x86_64,
+        }.contains(asset.type),
+      )
+      .toList(growable: false);
+
+  AppUpdateAsset? get preferredAndroidAsset {
+    final android = androidAssets;
+    for (final type in const <AppUpdateAssetType>[
+      AppUpdateAssetType.arm64,
+      AppUpdateAssetType.universal,
+      AppUpdateAssetType.arm32,
+      AppUpdateAssetType.x86_64,
+    ]) {
+      for (final asset in android) {
+        if (asset.type == type) {
+          return asset;
+        }
+      }
+    }
+    return null;
+  }
 }
 
 class AppUpdateCheckResult {

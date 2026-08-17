@@ -64,3 +64,7 @@ abstract interface class AudioTechnicalMetadataProvider {
 abstract interface class PlaybackCacheCleaner {
   Future<void> clearPlaybackCache(MediaItem item);
 }
+
+abstract interface class FullCacheCleaner {
+  Future<void> clearAllCachedFiles(Iterable<MediaItem> items);
+}
