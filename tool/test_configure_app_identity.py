@@ -6,7 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from configure_app_identity import configure_android, configure_windows
+from configure_app_identity import (
+    ANDROID_LAUNCHER_ICON_ROOT,
+    WINDOWS_APP_ICON,
+    configure_android,
+    configure_windows,
+)
 
 
 class ConfigureAppIdentityTest(unittest.TestCase):
@@ -132,6 +137,24 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 'android:fillColor="#FFFFFFFF"',
                 notification_icon.read_text(),
             )
+            for density in (
+                "mipmap-mdpi",
+                "mipmap-hdpi",
+                "mipmap-xhdpi",
+                "mipmap-xxhdpi",
+                "mipmap-xxxhdpi",
+            ):
+                installed_icon = (
+                    root
+                    / "android/app/src/main/res"
+                    / density
+                    / "ic_launcher.png"
+                )
+                self.assertTrue(installed_icon.is_file())
+                self.assertEqual(
+                    installed_icon.read_bytes(),
+                    (ANDROID_LAUNCHER_ICON_ROOT / density / "ic_launcher.png").read_bytes(),
+                )
 
     def test_configures_windows_product_and_binary_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -166,6 +189,9 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             self.assertIn('VALUE "InternalName", "teleplayer"', resource_text)
             self.assertIn('VALUE "OriginalFilename", "teleplayer.exe"', resource_text)
             self.assertIn('VALUE "ProductName", "TelePlayer"', resource_text)
+            installed_icon = runner / "resources" / "app_icon.ico"
+            self.assertTrue(installed_icon.is_file())
+            self.assertEqual(installed_icon.read_bytes(), WINDOWS_APP_ICON.read_bytes())
 
 
 if __name__ == "__main__":

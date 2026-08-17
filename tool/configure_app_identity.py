@@ -5,8 +5,22 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 from pathlib import Path
 
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+BRANDING_ROOT = PROJECT_ROOT / "assets" / "branding" / "platform"
+ANDROID_LAUNCHER_ICON_ROOT = BRANDING_ROOT / "android"
+WINDOWS_APP_ICON = BRANDING_ROOT / "windows" / "app_icon.ico"
+ANDROID_LAUNCHER_DENSITIES = (
+    "mipmap-mdpi",
+    "mipmap-hdpi",
+    "mipmap-xhdpi",
+    "mipmap-xxhdpi",
+    "mipmap-xxxhdpi",
+)
 
 DISPLAY_NAME = "TelePlayer"
 WINDOWS_BINARY_NAME = "teleplayer"
@@ -151,8 +165,28 @@ def _configure_android_application_id(root: Path) -> None:
                 activity.unlink()
 
 
+def _install_android_launcher_icons(root: Path) -> None:
+    res_root = root / "android" / "app" / "src" / "main" / "res"
+    for density in ANDROID_LAUNCHER_DENSITIES:
+        source = ANDROID_LAUNCHER_ICON_ROOT / density / "ic_launcher.png"
+        if not source.is_file():
+            raise FileNotFoundError(f"TelePlayer launcher icon is missing: {source}")
+        destination_dir = res_root / density
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination_dir / "ic_launcher.png")
+
+
+def _install_windows_app_icon(root: Path) -> None:
+    if not WINDOWS_APP_ICON.is_file():
+        raise FileNotFoundError(f"TelePlayer Windows icon is missing: {WINDOWS_APP_ICON}")
+    destination = root / "windows" / "runner" / "resources" / "app_icon.ico"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(WINDOWS_APP_ICON, destination)
+
+
 def configure_android(root: Path) -> None:
     _configure_android_application_id(root)
+    _install_android_launcher_icons(root)
     drawable_dir = root / "android" / "app" / "src" / "main" / "res" / "drawable"
     drawable_dir.mkdir(parents=True, exist_ok=True)
     (drawable_dir / f"{ANDROID_NOTIFICATION_ICON_NAME}.xml").write_text(
@@ -254,6 +288,7 @@ def configure_android(root: Path) -> None:
 
 def configure_windows(root: Path) -> None:
     windows = root / "windows"
+    _install_windows_app_icon(root)
     _replace(
         windows / "CMakeLists.txt",
         r'set\(BINARY_NAME "[^"]+"\)',

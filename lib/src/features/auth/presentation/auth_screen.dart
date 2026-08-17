@@ -289,10 +289,11 @@ class _AuthHero extends StatelessWidget {
                 ],
               ),
             ),
-            child: Icon(
-              ready ? Icons.library_music_rounded : Icons.play_circle_fill_rounded,
-              size: 58,
-              color: colors.onPrimaryContainer,
+            clipBehavior: Clip.antiAlias,
+            child: Image.asset(
+              'assets/branding/teleplayer_logo.png',
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
             ),
           ),
           const SizedBox(width: 18),

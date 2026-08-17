@@ -467,7 +467,10 @@ void main() {
 
     expect(uri, isNotNull);
     expect(uri!.scheme, 'file');
-    expect(File.fromUri(uri).path, mediaFile.path);
+    // Compare canonical file URIs rather than raw path strings. Windows
+    // normalizes URI paths to backslashes while Directory.systemTemp may
+    // preserve the forward slash used when constructing [mediaFile].
+    expect(uri, mediaFile.uri);
     expect(gateway.requestTypes, <String>['getMessage', 'downloadFile']);
   });
 
