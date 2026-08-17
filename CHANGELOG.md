@@ -1,3 +1,20 @@
+## [1.4.27] - 2026-08-17
+
+- Removed the explanatory Temporary song storage information card from Playback settings to keep the page compact.
+- Removed the Why this matters information card from Background activity settings while keeping the battery-optimization control available.
+
+## [1.4.26] - 2026-08-17
+
+- Fixed the Android playback crash regression introduced by the adaptive launcher-icon update by keeping the primary application icon bitmap-backed for foreground media-service compatibility.
+- Moved the adaptive artwork to the dedicated Android `roundIcon` resource so Recent Apps can still use the corrected TelePlayer icon without changing the primary icon resource type used by playback services.
+- Added raster round-icon fallbacks for every Android density and regression coverage to keep the notification icon independent from launcher/adaptive resources.
+
+## [1.4.25] - 2026-08-17
+
+- Added a proper Android adaptive launcher icon so Recent Apps and OEM launchers no longer wrap TelePlayer's legacy square bitmap inside an extra system icon shape.
+- Added an adaptive foreground layer derived from the existing TelePlayer logo, with a clean neutral background and safe-zone scaling for round, squircle, and other launcher masks.
+- Added Android `roundIcon` metadata and CI identity tests so generated host projects retain the corrected icon resources.
+
 ## [1.4.24] - 2026-08-17
 
 - Fixed `flutter analyze --fatal-infos` by removing the redundant direct `flutter/scheduler.dart` import from the Now Playing screen.

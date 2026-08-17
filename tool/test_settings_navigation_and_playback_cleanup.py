@@ -32,6 +32,15 @@ class SettingsNavigationAndPlaybackCleanupTest(unittest.TestCase):
         self.assertIn('maxLines: 1', source)
         self.assertNotIn("status: 'Auto-clean enabled'", source)
 
+    def test_verbose_playback_and_background_explanations_are_hidden(self):
+        source = (
+            ROOT / 'lib/src/features/settings/presentation/settings_screen.dart'
+        ).read_text(encoding='utf-8')
+        self.assertNotIn("title: 'Temporary song storage'", source)
+        self.assertNotIn('TelePlayer downloads only what playback needs.', source)
+        self.assertNotIn("title: 'Why this matters'", source)
+        self.assertNotIn('Some Android devices aggressively limit background activity', source)
+
     def test_background_activity_settings_are_available(self):
         source = (
             ROOT / 'lib/src/features/settings/presentation/settings_screen.dart'

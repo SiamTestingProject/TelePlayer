@@ -32,6 +32,36 @@ class BrandingLogoTest(unittest.TestCase):
                     / 'ic_launcher.png'
                 ).is_file()
             )
+        for density in (
+            'drawable-mdpi',
+            'drawable-hdpi',
+            'drawable-xhdpi',
+            'drawable-xxhdpi',
+            'drawable-xxxhdpi',
+        ):
+            adaptive = (
+                ROOT
+                / 'assets/branding/platform/android/adaptive'
+                / density
+                / 'ic_launcher_foreground.png'
+            )
+            self.assertTrue(adaptive.is_file())
+            self.assertGreater(adaptive.stat().st_size, 1_000)
+        for density in (
+            'mipmap-mdpi',
+            'mipmap-hdpi',
+            'mipmap-xhdpi',
+            'mipmap-xxhdpi',
+            'mipmap-xxxhdpi',
+        ):
+            round_icon = (
+                ROOT
+                / 'assets/branding/platform/android/round'
+                / density
+                / 'ic_launcher_round.png'
+            )
+            self.assertTrue(round_icon.is_file())
+            self.assertGreater(round_icon.stat().st_size, 1_000)
         self.assertTrue(
             (ROOT / 'assets/branding/platform/windows/app_icon.ico').is_file()
         )

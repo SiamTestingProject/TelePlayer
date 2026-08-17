@@ -13,6 +13,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BRANDING_ROOT = PROJECT_ROOT / "assets" / "branding" / "platform"
 ANDROID_LAUNCHER_ICON_ROOT = BRANDING_ROOT / "android"
+ANDROID_ADAPTIVE_ICON_ROOT = ANDROID_LAUNCHER_ICON_ROOT / "adaptive"
+ANDROID_ROUND_ICON_ROOT = ANDROID_LAUNCHER_ICON_ROOT / "round"
 WINDOWS_APP_ICON = BRANDING_ROOT / "windows" / "app_icon.ico"
 ANDROID_LAUNCHER_DENSITIES = (
     "mipmap-mdpi",
@@ -21,6 +23,14 @@ ANDROID_LAUNCHER_DENSITIES = (
     "mipmap-xxhdpi",
     "mipmap-xxxhdpi",
 )
+ANDROID_ADAPTIVE_FOREGROUND_DENSITIES = (
+    "drawable-mdpi",
+    "drawable-hdpi",
+    "drawable-xhdpi",
+    "drawable-xxhdpi",
+    "drawable-xxxhdpi",
+)
+ANDROID_ROUND_ICON_DENSITIES = ANDROID_LAUNCHER_DENSITIES
 
 DISPLAY_NAME = "TelePlayer"
 WINDOWS_BINARY_NAME = "teleplayer"
@@ -45,6 +55,16 @@ ANDROID_CLEARTEXT_ATTRIBUTE = 'android:usesCleartextTraffic="true"'
 ANDROID_TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"'
 ANDROID_AUDIO_ACTIVITY = "com.ryanheise.audioservice.AudioServiceActivity"
 ANDROID_NOTIFICATION_ICON_NAME = "ic_stat_teleplayer"
+ANDROID_ADAPTIVE_ICON_BACKGROUND_XML = """<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFF8F9FA" />
+</shape>
+"""
+ANDROID_ADAPTIVE_ICON_XML = """<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+"""
 ANDROID_NOTIFICATION_ICON_XML = """<vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -175,6 +195,50 @@ def _install_android_launcher_icons(root: Path) -> None:
         destination_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination_dir / "ic_launcher.png")
 
+    # Keep the primary application icon as a normal bitmap. Some Android
+    # media/foreground-service stacks still inspect ApplicationInfo.icon when
+    # playback starts, and changing that resource into an adaptive-icon XML can
+    # trigger OEM-specific crashes. Recent-app surfaces can use roundIcon
+    # independently, so install the adaptive artwork under ic_launcher_round.
+    for density in ANDROID_ADAPTIVE_FOREGROUND_DENSITIES:
+        source = ANDROID_ADAPTIVE_ICON_ROOT / density / "ic_launcher_foreground.png"
+        if not source.is_file():
+            raise FileNotFoundError(
+                f"TelePlayer adaptive launcher foreground is missing: {source}"
+            )
+        destination_dir = res_root / density
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination_dir / "ic_launcher_foreground.png")
+
+    for density in ANDROID_ROUND_ICON_DENSITIES:
+        source = ANDROID_ROUND_ICON_ROOT / density / "ic_launcher_round.png"
+        if not source.is_file():
+            raise FileNotFoundError(
+                f"TelePlayer round launcher icon is missing: {source}"
+            )
+        destination_dir = res_root / density
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination_dir / "ic_launcher_round.png")
+
+    drawable_dir = res_root / "drawable"
+    drawable_dir.mkdir(parents=True, exist_ok=True)
+    (drawable_dir / "ic_launcher_background.xml").write_text(
+        ANDROID_ADAPTIVE_ICON_BACKGROUND_XML,
+        encoding="utf-8",
+    )
+    adaptive_dir = res_root / "mipmap-anydpi-v26"
+    adaptive_dir.mkdir(parents=True, exist_ok=True)
+    # Do not replace ic_launcher with adaptive XML: audio_service and some
+    # OEM media stacks may resolve the primary application icon while starting
+    # the foreground playback service. Keep that resource bitmap-backed.
+    primary_adaptive = adaptive_dir / "ic_launcher.xml"
+    if primary_adaptive.exists():
+        primary_adaptive.unlink()
+    (adaptive_dir / "ic_launcher_round.xml").write_text(
+        ANDROID_ADAPTIVE_ICON_XML,
+        encoding="utf-8",
+    )
+
 
 def _install_windows_app_icon(root: Path) -> None:
     if not WINDOWS_APP_ICON.is_file():
@@ -200,6 +264,17 @@ def configure_android(root: Path) -> None:
         f'android:label="{DISPLAY_NAME}"',
     )
     original = manifest.read_text(encoding="utf-8")
+    if 'android:roundIcon=' not in original:
+        updated, count = re.subn(
+            r'(android:label="TelePlayer")',
+            r'\1\n        android:roundIcon="@mipmap/ic_launcher_round"',
+            original,
+            count=1,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected TelePlayer label was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
     if ANDROID_TOOLS_NAMESPACE not in original:
         updated, count = re.subn(
             r"(<manifest\b[^>]*)(>)",

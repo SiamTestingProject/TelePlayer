@@ -273,13 +273,6 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       saving: _saving,
       onSave: _saving || _cleaning ? null : () => unawaited(_save()),
       children: <Widget>[
-        const _SettingsInfoCard(
-          icon: Icons.cleaning_services_rounded,
-          title: 'Temporary song storage',
-          body:
-              'TelePlayer downloads only what playback needs. The TDLib media file is automatically removed from local storage after the song finishes or when you switch to another song. Album artwork and the library catalog remain cached so the interface stays fast.',
-        ),
-        const SizedBox(height: 14),
         TextField(
           controller: _cacheController,
           keyboardType: TextInputType.number,
@@ -597,13 +590,6 @@ class _BackgroundActivitySettingsPageState
       subtitle: 'Battery optimization and uninterrupted playback',
       icon: Icons.battery_saver_rounded,
       children: <Widget>[
-        const _SettingsInfoCard(
-          icon: Icons.info_outline_rounded,
-          title: 'Why this matters',
-          body:
-              'Some Android devices aggressively limit background activity to save battery. Allowing TelePlayer to ignore battery optimization can reduce the chance of background playback being interrupted while the screen is off or the app is not open.',
-        ),
-        const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(

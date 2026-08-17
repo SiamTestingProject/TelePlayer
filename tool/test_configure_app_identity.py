@@ -7,7 +7,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from configure_app_identity import (
+    ANDROID_ADAPTIVE_ICON_ROOT,
     ANDROID_LAUNCHER_ICON_ROOT,
+    ANDROID_ROUND_ICON_ROOT,
     WINDOWS_APP_ICON,
     configure_android,
     configure_windows,
@@ -44,7 +46,7 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             )
             manifest.write_text(
                 '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
-                '    <application android:label="telegram_media_player">\n'
+                '    <application android:label="telegram_media_player" android:icon="@mipmap/ic_launcher">\n'
                 '        <activity android:name=".MainActivity" />\n'
                 '    </application>\n'
                 '</manifest>\n',
@@ -57,6 +59,7 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             manifest_text = manifest.read_text()
             ElementTree.fromstring(manifest_text)
             self.assertIn('android:label="TelePlayer"', manifest_text)
+            self.assertIn('android:icon="@mipmap/ic_launcher"', manifest_text)
             self.assertIn('namespace = "com.siam.teleplayer"', build_file.read_text())
             self.assertIn('applicationId = "com.siam.teleplayer"', build_file.read_text())
             moved_activity = (
@@ -129,6 +132,76 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 1,
             )
             self.assertEqual(manifest_text.count('xmlns:tools='), 1)
+            self.assertEqual(
+                manifest_text.count(
+                    'android:roundIcon="@mipmap/ic_launcher_round"'
+                ),
+                1,
+            )
+            primary_adaptive_icon = (
+                root
+                / 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml'
+            )
+            self.assertFalse(primary_adaptive_icon.exists())
+            adaptive_icon = (
+                root
+                / 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml'
+            )
+            self.assertTrue(adaptive_icon.is_file())
+            adaptive_text = adaptive_icon.read_text()
+            self.assertIn('@drawable/ic_launcher_background', adaptive_text)
+            self.assertIn('@drawable/ic_launcher_foreground', adaptive_text)
+            adaptive_background = (
+                root
+                / 'android/app/src/main/res/drawable/ic_launcher_background.xml'
+            )
+            self.assertTrue(adaptive_background.is_file())
+            self.assertIn('#FFF8F9FA', adaptive_background.read_text())
+            for density in (
+                'drawable-mdpi',
+                'drawable-hdpi',
+                'drawable-xhdpi',
+                'drawable-xxhdpi',
+                'drawable-xxxhdpi',
+            ):
+                installed_foreground = (
+                    root
+                    / 'android/app/src/main/res'
+                    / density
+                    / 'ic_launcher_foreground.png'
+                )
+                self.assertTrue(installed_foreground.is_file())
+                self.assertEqual(
+                    installed_foreground.read_bytes(),
+                    (
+                        ANDROID_ADAPTIVE_ICON_ROOT
+                        / density
+                        / 'ic_launcher_foreground.png'
+                    ).read_bytes(),
+                )
+            for density in (
+                "mipmap-mdpi",
+                "mipmap-hdpi",
+                "mipmap-xhdpi",
+                "mipmap-xxhdpi",
+                "mipmap-xxxhdpi",
+            ):
+                installed_round_icon = (
+                    root
+                    / "android/app/src/main/res"
+                    / density
+                    / "ic_launcher_round.png"
+                )
+                self.assertTrue(installed_round_icon.is_file())
+                self.assertEqual(
+                    installed_round_icon.read_bytes(),
+                    (
+                        ANDROID_ROUND_ICON_ROOT
+                        / density
+                        / "ic_launcher_round.png"
+                    ).read_bytes(),
+                )
+
             notification_icon = (
                 root / "android/app/src/main/res/drawable/ic_stat_teleplayer.xml"
             )

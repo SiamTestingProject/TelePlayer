@@ -1,7 +1,7 @@
 name: telegram_media_player
 description: TelePlayer is a Material 3 app for streaming songs from Telegram.
 publish_to: "none"
-version: 1.4.24+43
+version: 1.4.27+46
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
