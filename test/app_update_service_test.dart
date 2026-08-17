@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegram_media_player/src/features/update/data/app_update_service.dart';
 import 'package:telegram_media_player/src/features/update/models/app_update.dart';
@@ -185,6 +187,26 @@ void main() {
         );
       },
     );
+
+    test('opens the Android package installer for a downloaded APK', () async {
+      final directory = await Directory.systemTemp.createTemp('teleplayer-update-');
+      addTearDown(() => directory.delete(recursive: true));
+      final apk = File('${directory.path}${Platform.pathSeparator}TelePlayer-arm64.apk');
+      await apk.writeAsBytes(const <int>[1, 2, 3]);
+      String? installedPath;
+      final service = AppUpdateService(
+        repository: 'example/teleplayer',
+        platform: UpdatePlatform.android,
+        apkInstaller: (path) async {
+          installedPath = path;
+          return true;
+        },
+      );
+
+      await service.installDownloadedUpdate(apk.path);
+
+      expect(installedPath, apk.path);
+    });
 
     test('opens the selected download URL externally', () async {
       Uri? openedUri;

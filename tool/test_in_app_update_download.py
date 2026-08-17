@@ -25,6 +25,20 @@ class InAppUpdateDownloadTest(unittest.TestCase):
         self.assertIn("_formatBytes(progress.receivedBytes)", sheet)
         self.assertIn("percentage", sheet)
 
+    def test_android_download_immediately_opens_package_installer(self):
+        service = (ROOT / "lib/src/features/update/data/app_update_service.dart").read_text(encoding="utf-8")
+        controller = (ROOT / "lib/src/features/update/application/app_update_controller.dart").read_text(encoding="utf-8")
+        identity = (ROOT / "tool/configure_app_identity.py").read_text(encoding="utf-8")
+        sheet = (ROOT / "lib/src/features/update/presentation/app_update_sheet.dart").read_text(encoding="utf-8")
+        self.assertIn("installDownloadedUpdate", service)
+        self.assertIn("MethodChannel", service)
+        self.assertIn("await _service.installDownloadedUpdate(path)", controller)
+        self.assertIn("AppUpdateStatus.installing", controller)
+        self.assertIn("android.permission.REQUEST_INSTALL_PACKAGES", identity)
+        self.assertIn("FileProvider.getUriForFile", identity)
+        self.assertIn("ACTION_MANAGE_UNKNOWN_APP_SOURCES", identity)
+        self.assertIn("Install ${selectedAsset?.label", sheet)
+
     def test_release_uses_versioned_changelog_body(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

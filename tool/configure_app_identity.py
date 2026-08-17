@@ -45,6 +45,9 @@ ANDROID_BATTERY_OPTIMIZATION_PERMISSION = (
     '<uses-permission '
     'android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />'
 )
+ANDROID_INSTALL_PACKAGES_PERMISSION = (
+    '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />'
+)
 ANDROID_BACKGROUND_AUDIO_PERMISSIONS = (
     '<uses-permission android:name="android.permission.WAKE_LOCK" />',
     '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
@@ -53,7 +56,146 @@ ANDROID_BACKGROUND_AUDIO_PERMISSIONS = (
 )
 ANDROID_CLEARTEXT_ATTRIBUTE = 'android:usesCleartextTraffic="true"'
 ANDROID_TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"'
-ANDROID_AUDIO_ACTIVITY = "com.ryanheise.audioservice.AudioServiceActivity"
+ANDROID_AUDIO_ACTIVITY = f"{ANDROID_APPLICATION_ID}.MainActivity"
+ANDROID_UPDATE_CHANNEL = f"{ANDROID_APPLICATION_ID}/app_update"
+ANDROID_UPDATE_PROVIDER_AUTHORITY = "${applicationId}.update_provider"
+ANDROID_UPDATE_FILE_PATHS_XML = """<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="teleplayer_updates" path="." />
+</paths>
+"""
+ANDROID_MAIN_ACTIVITY_KOTLIN = f"""package {ANDROID_APPLICATION_ID}
+
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import java.io.File
+
+@Suppress("DEPRECATION")
+class MainActivity : AudioServiceActivity() {{
+    companion object {{
+        private const val UPDATE_CHANNEL = "{ANDROID_UPDATE_CHANNEL}"
+        private const val INSTALL_PERMISSION_REQUEST = 9142
+    }}
+
+    private var pendingInstallPath: String? = null
+    private var pendingInstallResult: MethodChannel.Result? = null
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {{
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL)
+            .setMethodCallHandler {{ call, result -> handleUpdateCall(call, result) }}
+    }}
+
+    private fun handleUpdateCall(call: MethodCall, result: MethodChannel.Result) {{
+        if (call.method != "installApk") {{
+            result.notImplemented()
+            return
+        }}
+        val path = call.argument<String>("path")
+        if (path.isNullOrBlank()) {{
+            result.error("invalid_path", "The downloaded update path is missing.", null)
+            return
+        }}
+        val apk = File(path)
+        if (!apk.isFile) {{
+            result.error("missing_apk", "The downloaded APK no longer exists.", null)
+            return
+        }}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()) {{
+            pendingInstallPath = apk.absolutePath
+            pendingInstallResult = result
+            try {{
+                startActivityForResult(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName"),
+                    ),
+                    INSTALL_PERMISSION_REQUEST,
+                )
+            }} catch (error: ActivityNotFoundException) {{
+                clearPendingInstall()
+                result.error(
+                    "install_permission_unavailable",
+                    "Android could not open the install-unknown-apps setting.",
+                    null,
+                )
+            }}
+            return
+        }}
+        launchPackageInstaller(apk, result)
+    }}
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {{
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == INSTALL_PERMISSION_REQUEST) {{
+            resumePendingInstall(permissionResultReturned = true)
+        }}
+    }}
+
+    override fun onResume() {{
+        super.onResume()
+        if (pendingInstallPath != null && pendingInstallResult != null) {{
+            resumePendingInstall(permissionResultReturned = false)
+        }}
+    }}
+
+    private fun resumePendingInstall(permissionResultReturned: Boolean) {{
+        val path = pendingInstallPath ?: return
+        val result = pendingInstallResult ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()) {{
+            if (!permissionResultReturned) return
+            pendingInstallPath = null
+            pendingInstallResult = null
+            result.error(
+                "install_permission_denied",
+                "Allow TelePlayer to install unknown apps, then tap Install again.",
+                null,
+            )
+            return
+        }}
+        pendingInstallPath = null
+        pendingInstallResult = null
+        launchPackageInstaller(File(path), result)
+    }}
+
+    private fun launchPackageInstaller(apk: File, result: MethodChannel.Result) {{
+        try {{
+            val uri = FileProvider.getUriForFile(
+                this,
+                "$packageName.update_provider",
+                apk,
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {{
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = android.content.ClipData.newRawUri("TelePlayer update", uri)
+            }}
+            startActivity(intent)
+            result.success(true)
+        }} catch (error: Exception) {{
+            result.error(
+                "install_failed",
+                error.message ?: "Android could not open the package installer.",
+                null,
+            )
+        }}
+    }}
+
+    private fun clearPendingInstall() {{
+        pendingInstallPath = null
+        pendingInstallResult = null
+    }}
+}}
+"""
 ANDROID_NOTIFICATION_ICON_NAME = "ic_stat_teleplayer"
 ANDROID_ADAPTIVE_ICON_BACKGROUND_XML = """<shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
@@ -74,6 +216,14 @@ ANDROID_NOTIFICATION_ICON_XML = """<vector xmlns:android="http://schemas.android
         android:fillColor="#FFFFFFFF"
         android:pathData="M12,3v10.55A4,4 0,1 0,14,17V7h4V3h-6z" />
 </vector>
+"""
+# audio_service resolves the notification icon dynamically from the resource
+# name supplied in Dart. Android's release resource shrinker cannot see that
+# string lookup and may remove the custom icon unless it is explicitly kept.
+# A missing small icon makes NotificationManager throw and kills playback.
+ANDROID_NOTIFICATION_RESOURCE_KEEP_XML = """<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_teleplayer" />
 """
 ANDROID_AUDIO_COMPONENTS = """        <service
             android:name="com.ryanheise.audioservice.AudioService"
@@ -180,7 +330,10 @@ def _configure_android_application_id(root: Path) -> None:
                 / activity.name
             )
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(activity_text, encoding="utf-8")
+            if destination.suffix == ".kt":
+                destination.write_text(ANDROID_MAIN_ACTIVITY_KOTLIN, encoding="utf-8")
+            else:
+                destination.write_text(activity_text, encoding="utf-8")
             if activity.resolve() != destination.resolve():
                 activity.unlink()
 
@@ -195,11 +348,10 @@ def _install_android_launcher_icons(root: Path) -> None:
         destination_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination_dir / "ic_launcher.png")
 
-    # Keep the primary application icon as a normal bitmap. Some Android
-    # media/foreground-service stacks still inspect ApplicationInfo.icon when
-    # playback starts, and changing that resource into an adaptive-icon XML can
-    # trigger OEM-specific crashes. Recent-app surfaces can use roundIcon
-    # independently, so install the adaptive artwork under ic_launcher_round.
+    # Install adaptive foreground layers for Android 8+. The media notification
+    # uses its own dedicated monochrome drawable, so the launcher icon can stay
+    # a proper adaptive icon without being coupled to playback notification
+    # resources.
     for density in ANDROID_ADAPTIVE_FOREGROUND_DENSITIES:
         source = ANDROID_ADAPTIVE_ICON_ROOT / density / "ic_launcher_foreground.png"
         if not source.is_file():
@@ -228,12 +380,10 @@ def _install_android_launcher_icons(root: Path) -> None:
     )
     adaptive_dir = res_root / "mipmap-anydpi-v26"
     adaptive_dir.mkdir(parents=True, exist_ok=True)
-    # Do not replace ic_launcher with adaptive XML: audio_service and some
-    # OEM media stacks may resolve the primary application icon while starting
-    # the foreground playback service. Keep that resource bitmap-backed.
-    primary_adaptive = adaptive_dir / "ic_launcher.xml"
-    if primary_adaptive.exists():
-        primary_adaptive.unlink()
+    (adaptive_dir / "ic_launcher.xml").write_text(
+        ANDROID_ADAPTIVE_ICON_XML,
+        encoding="utf-8",
+    )
     (adaptive_dir / "ic_launcher_round.xml").write_text(
         ANDROID_ADAPTIVE_ICON_XML,
         encoding="utf-8",
@@ -255,6 +405,12 @@ def configure_android(root: Path) -> None:
     drawable_dir.mkdir(parents=True, exist_ok=True)
     (drawable_dir / f"{ANDROID_NOTIFICATION_ICON_NAME}.xml").write_text(
         ANDROID_NOTIFICATION_ICON_XML,
+        encoding="utf-8",
+    )
+    raw_dir = root / "android" / "app" / "src" / "main" / "res" / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / "keep.xml").write_text(
+        ANDROID_NOTIFICATION_RESOURCE_KEEP_XML,
         encoding="utf-8",
     )
     manifest = root / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
@@ -290,6 +446,7 @@ def configure_android(root: Path) -> None:
         ANDROID_INTERNET_PERMISSION,
         ANDROID_NOTIFICATION_PERMISSION,
         ANDROID_BATTERY_OPTIMIZATION_PERMISSION,
+        ANDROID_INSTALL_PACKAGES_PERMISSION,
         *ANDROID_BACKGROUND_AUDIO_PERMISSIONS,
     )
     for permission in permissions:
@@ -330,6 +487,35 @@ def configure_android(root: Path) -> None:
             raise RuntimeError(f"Expected Flutter MainActivity was not found in {manifest}")
         manifest.write_text(updated, encoding="utf-8")
         original = updated
+    xml_dir = root / "android" / "app" / "src" / "main" / "res" / "xml"
+    xml_dir.mkdir(parents=True, exist_ok=True)
+    (xml_dir / "update_file_paths.xml").write_text(
+        ANDROID_UPDATE_FILE_PATHS_XML,
+        encoding="utf-8",
+    )
+    if 'android:name="androidx.core.content.FileProvider"' not in original:
+        provider = f'''        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="{ANDROID_UPDATE_PROVIDER_AUTHORITY}"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
+'''
+        updated, count = re.subn(
+            r"(^\s*</application>)",
+            provider + r"\1",
+            original,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if count == 0:
+            raise RuntimeError(f"Expected application closing tag was not found in {manifest}")
+        manifest.write_text(updated, encoding="utf-8")
+        original = updated
+
     if (
         'android:name="com.ryanheise.audioservice.AudioService"' in original
         and 'android:stopWithTask="false"' not in original

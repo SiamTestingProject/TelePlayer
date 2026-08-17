@@ -361,10 +361,11 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     }
 
     final scope = AppScope.of(context);
-    if (scope.updateController.status == AppUpdateStatus.downloading) {
+    if (scope.updateController.status == AppUpdateStatus.downloading ||
+        scope.updateController.status == AppUpdateStatus.installing) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Wait for the current app update download to finish.'),
+          content: Text('Wait for the current app update operation to finish.'),
         ),
       );
       return;
@@ -1081,6 +1082,7 @@ class _AppUpdateTile extends StatelessWidget {
             controller.message ?? 'The update check failed.',
           AppUpdateStatus.opening => 'Opening the update download...',
           AppUpdateStatus.downloading => 'Downloading the selected update...',
+          AppUpdateStatus.installing => 'Opening the Android installer...',
           AppUpdateStatus.downloaded => controller.message ?? 'Update downloaded.',
           AppUpdateStatus.idle => 'Check for a newer GitHub release',
         };

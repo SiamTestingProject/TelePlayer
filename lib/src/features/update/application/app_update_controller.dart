@@ -10,6 +10,7 @@ enum AppUpdateStatus {
   updateAvailable,
   opening,
   downloading,
+  installing,
   downloaded,
   error,
 }
@@ -39,7 +40,8 @@ class AppUpdateController extends ChangeNotifier {
   bool get isBusy =>
       _status == AppUpdateStatus.checking ||
       _status == AppUpdateStatus.opening ||
-      _status == AppUpdateStatus.downloading;
+      _status == AppUpdateStatus.downloading ||
+      _status == AppUpdateStatus.installing;
 
   Future<AppUpdate?> checkOnStartup() {
     if (_didCheckOnStartup) {
@@ -116,8 +118,39 @@ class AppUpdateController extends ChangeNotifier {
         },
       );
       _downloadedPath = path;
+      if (_service.platform == UpdatePlatform.android) {
+        _status = AppUpdateStatus.installing;
+        _message = 'Opening the Android installer...';
+        notifyListeners();
+        await _service.installDownloadedUpdate(path);
+        _status = AppUpdateStatus.downloaded;
+        _message = '${asset.label} update downloaded. Android installer opened.';
+      } else {
+        _status = AppUpdateStatus.downloaded;
+        _message = '${asset.label} update downloaded.';
+      }
+      return true;
+    } catch (error) {
+      _status = AppUpdateStatus.error;
+      _message = _errorMessage(error);
+      return false;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<bool> installDownloadedUpdate() async {
+    final path = _downloadedPath;
+    if (path == null || path.isEmpty || _status == AppUpdateStatus.installing) {
+      return false;
+    }
+    _status = AppUpdateStatus.installing;
+    _message = 'Opening the Android installer...';
+    notifyListeners();
+    try {
+      await _service.installDownloadedUpdate(path);
       _status = AppUpdateStatus.downloaded;
-      _message = '${asset.label} update downloaded.';
+      _message = '${_downloadAsset?.label ?? 'Android'} update ready to install.';
       return true;
     } catch (error) {
       _status = AppUpdateStatus.error;
@@ -129,10 +162,12 @@ class AppUpdateController extends ChangeNotifier {
   }
 
   void clearDownloadedUpdateState() {
+    final hadDownloadedUpdate = _downloadedPath != null;
     _downloadProgress = null;
     _downloadAsset = null;
     _downloadedPath = null;
-    if (_status == AppUpdateStatus.downloaded) {
+    if (_status == AppUpdateStatus.downloaded ||
+        (_status == AppUpdateStatus.error && hadDownloadedUpdate)) {
       _status = _update == null
           ? AppUpdateStatus.idle
           : AppUpdateStatus.updateAvailable;

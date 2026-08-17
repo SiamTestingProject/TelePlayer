@@ -106,21 +106,21 @@ components and required permissions from `tool/configure_app_identity.py`.
 Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together. A push to `main` creates or updates the stable semantic
-release for the version in `pubspec.yaml` (for example `v1.4.27`). Non-main
+release for the version in `pubspec.yaml` (for example `v1.4.29`). Non-main
 branches use `build-<run number>` prereleases. You can also push a matching
-version tag such as `v1.4.27` explicitly.
+version tag such as `v1.4.29` explicitly.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.4.27.apk`
-- `TelePlayer-v1.4.27-arm64.apk`
-- `TelePlayer-v1.4.27-armeabi-v7a.apk`
-- `TelePlayer-v1.4.27-x86_64.apk`
-- `TelePlayer-v1.4.27-aab.aab`
-- `TelePlayer-v1.4.27-Setup.exe`
-- `TelePlayer-v1.4.27-windows-x64.zip`
+- `TelePlayer-v1.4.29.apk`
+- `TelePlayer-v1.4.29-arm64.apk`
+- `TelePlayer-v1.4.29-armeabi-v7a.apk`
+- `TelePlayer-v1.4.29-x86_64.apk`
+- `TelePlayer-v1.4.29-aab.aab`
+- `TelePlayer-v1.4.29-Setup.exe`
+- `TelePlayer-v1.4.29-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

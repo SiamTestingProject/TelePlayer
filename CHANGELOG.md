@@ -1,3 +1,17 @@
+## [1.4.29] - 2026-08-17
+
+- Fixed the Android playback crash `Invalid notification (no valid small icon)` by explicitly preserving TelePlayer's custom media notification icon from release resource shrinking.
+- Added Android `res/raw/keep.xml` for `@drawable/ic_stat_teleplayer`, matching audio_service's requirement for dynamically resolved custom notification icons.
+- Restored the primary Android adaptive launcher icon now that playback uses a completely separate notification resource; App Info, Recent Apps, and modern launchers no longer fall back to the legacy full-background bitmap.
+- Rebuilt legacy/round raster fallbacks with transparent outer pixels and a centered TelePlayer mark so older Android surfaces do not show the uneven white crescent around the logo.
+
+## [1.4.28] - 2026-08-17
+
+- Android updates now open the system package installer automatically as soon as an APK finishes downloading.
+- Added the Android install-unknown-apps permission flow; when required, TelePlayer opens the per-app permission screen and continues installation after permission is granted.
+- Added a retryable Install button for an already-downloaded APK so installation can be reopened without downloading the update again.
+- Added a private FileProvider path for safely handing the downloaded APK to Android's package installer.
+
 ## [1.4.27] - 2026-08-17
 
 - Removed the explanatory Temporary song storage information card from Playback settings to keep the page compact.

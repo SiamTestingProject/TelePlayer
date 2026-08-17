@@ -86,7 +86,8 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
         ? widget.controller.downloadProgress
         : null;
     final isDownloading = widget.controller.status == AppUpdateStatus.downloading;
-    final isDownloaded = widget.controller.status == AppUpdateStatus.downloaded &&
+    final isInstalling = widget.controller.status == AppUpdateStatus.installing;
+    final hasDownloadedSelected = widget.controller.downloadedPath != null &&
         activeDownload?.uri == selectedAsset?.uri;
 
     return Material(
@@ -226,7 +227,7 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
                     for (final asset in androidAssets)
                       ChoiceChip(
                         selected: selectedAsset?.uri == asset.uri,
-                        onSelected: isDownloading
+                        onSelected: isDownloading || isInstalling
                             ? null
                             : (_) {
                                 setState(() {
@@ -266,25 +267,29 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
               const SizedBox(height: 24),
               if (androidAssets.isNotEmpty)
                 FilledButton.icon(
-                  onPressed: isDownloading || isDownloaded || selectedAsset == null
+                  onPressed: selectedAsset == null || isDownloading || isInstalling
                       ? null
-                      : _downloadUpdate,
-                  icon: isDownloading
+                      : hasDownloadedSelected
+                          ? _installDownloadedUpdate
+                          : _downloadUpdate,
+                  icon: isDownloading || isInstalling
                       ? const SizedBox.square(
                           dimension: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Icon(
-                          isDownloaded
-                              ? Icons.download_done_rounded
+                          hasDownloadedSelected
+                              ? Icons.system_update_alt_rounded
                               : Icons.download_rounded,
                         ),
                   label: Text(
                     isDownloading
                         ? 'Downloading ${activeDownload?.label ?? ''}...'
-                        : isDownloaded
-                            ? '${selectedAsset?.label ?? ''} downloaded'
-                            : 'Download ${selectedAsset?.label ?? 'update'}',
+                        : isInstalling
+                            ? 'Opening Android installer...'
+                            : hasDownloadedSelected
+                                ? 'Install ${selectedAsset?.label ?? 'update'} update'
+                                : 'Download ${selectedAsset?.label ?? 'update'}',
                   ),
                 )
               else
@@ -306,10 +311,10 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
                         : 'Open release page',
                   ),
                 ),
-              if (isDownloaded && widget.controller.downloadedPath != null) ...[
+              if (hasDownloadedSelected) ...[
                 const SizedBox(height: 10),
                 Text(
-                  'Saved inside TelePlayer updates storage as ${selectedAsset?.name}.',
+                  'Downloaded as ${selectedAsset?.name}. TelePlayer opens the Android installer automatically; tap Install again if Android closes it.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
@@ -318,7 +323,7 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
               ],
               const SizedBox(height: 8),
               TextButton(
-                onPressed: isDownloading || _isOpening
+                onPressed: isDownloading || isInstalling || _isOpening
                     ? null
                     : () => Navigator.of(context).pop(),
                 child: const Text('Later'),
@@ -340,6 +345,19 @@ class _AppUpdateSheetState extends State<_AppUpdateSheet> {
     });
     final downloaded = await widget.controller.downloadUpdateAsset(asset);
     if (!mounted || downloaded) {
+      return;
+    }
+    setState(() {
+      _error = widget.controller.message;
+    });
+  }
+
+  Future<void> _installDownloadedUpdate() async {
+    setState(() {
+      _error = null;
+    });
+    final opened = await widget.controller.installDownloadedUpdate();
+    if (!mounted || opened) {
       return;
     }
     setState(() {

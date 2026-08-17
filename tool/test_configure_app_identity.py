@@ -69,9 +69,14 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             moved_text = moved_activity.read_text()
             self.assertIn('package com.siam.teleplayer\n\n', moved_text)
             self.assertIn(
-                'import io.flutter.embedding.android.FlutterActivity',
+                'import com.ryanheise.audioservice.AudioServiceActivity',
                 moved_text,
             )
+            self.assertIn('class MainActivity : AudioServiceActivity()', moved_text)
+            self.assertIn('com.siam.teleplayer/app_update', moved_text)
+            self.assertIn('Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES', moved_text)
+            self.assertIn('FileProvider.getUriForFile', moved_text)
+            self.assertIn('application/vnd.android.package-archive', moved_text)
             self.assertNotIn(
                 'com.siam.teleplayerimport',
                 moved_text,
@@ -89,6 +94,10 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 manifest_text.count(
                     'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'
                 ),
+                1,
+            )
+            self.assertEqual(
+                manifest_text.count('android.permission.REQUEST_INSTALL_PACKAGES'),
                 1,
             )
             self.assertEqual(
@@ -111,7 +120,7 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             )
             self.assertEqual(
                 manifest_text.count(
-                    'android:name="com.ryanheise.audioservice.AudioServiceActivity"'
+                    'android:name="com.siam.teleplayer.MainActivity"'
                 ),
                 1,
             )
@@ -133,6 +142,20 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             )
             self.assertEqual(manifest_text.count('xmlns:tools='), 1)
             self.assertEqual(
+                manifest_text.count('android:name="androidx.core.content.FileProvider"'),
+                1,
+            )
+            self.assertIn(
+                'android:authorities="${applicationId}.update_provider"',
+                manifest_text,
+            )
+            self.assertIn('android:resource="@xml/update_file_paths"', manifest_text)
+            update_paths = (
+                root / 'android/app/src/main/res/xml/update_file_paths.xml'
+            )
+            self.assertTrue(update_paths.is_file())
+            self.assertIn('<files-path', update_paths.read_text())
+            self.assertEqual(
                 manifest_text.count(
                     'android:roundIcon="@mipmap/ic_launcher_round"'
                 ),
@@ -142,7 +165,10 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 root
                 / 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml'
             )
-            self.assertFalse(primary_adaptive_icon.exists())
+            self.assertTrue(primary_adaptive_icon.is_file())
+            primary_adaptive_text = primary_adaptive_icon.read_text()
+            self.assertIn('@drawable/ic_launcher_background', primary_adaptive_text)
+            self.assertIn('@drawable/ic_launcher_foreground', primary_adaptive_text)
             adaptive_icon = (
                 root
                 / 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml'
@@ -209,6 +235,15 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             self.assertIn(
                 'android:fillColor="#FFFFFFFF"',
                 notification_icon.read_text(),
+            )
+            resource_keep = (
+                root / "android/app/src/main/res/raw/keep.xml"
+            )
+            self.assertTrue(resource_keep.is_file())
+            keep_text = resource_keep.read_text()
+            self.assertIn(
+                'tools:keep="@drawable/ic_stat_teleplayer"',
+                keep_text,
             )
             for density in (
                 "mipmap-mdpi",

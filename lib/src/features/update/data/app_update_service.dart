@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -12,6 +13,7 @@ typedef ReleaseLoader = Future<List<Object?>> Function(Uri uri);
 typedef InstalledVersionLoader = Future<String> Function();
 typedef ExternalUrlLauncher = Future<bool> Function(Uri uri);
 typedef UpdateDownloadDirectoryLoader = Future<Directory> Function();
+typedef ApkInstaller = Future<bool> Function(String path);
 typedef UpdateDownloadProgressCallback = void Function(
   AppUpdateDownloadProgress progress,
 );
@@ -34,6 +36,7 @@ class AppUpdateService {
     InstalledVersionLoader? installedVersionLoader,
     ExternalUrlLauncher? externalUrlLauncher,
     UpdateDownloadDirectoryLoader? downloadDirectoryLoader,
+    ApkInstaller? apkInstaller,
     UpdatePlatform? platform,
   })  : repository = repository ??
             const String.fromEnvironment('GITHUB_REPOSITORY'),
@@ -43,6 +46,7 @@ class AppUpdateService {
         _externalUrlLauncher = externalUrlLauncher ?? _launchExternally,
         _downloadDirectoryLoader =
             downloadDirectoryLoader ?? _defaultDownloadDirectory,
+        _apkInstaller = apkInstaller ?? _installApkWithPlatformChannel,
         platform = platform ?? _detectPlatform();
 
   final String repository;
@@ -50,6 +54,7 @@ class AppUpdateService {
   final InstalledVersionLoader _installedVersionLoader;
   final ExternalUrlLauncher _externalUrlLauncher;
   final UpdateDownloadDirectoryLoader _downloadDirectoryLoader;
+  final ApkInstaller _apkInstaller;
   final UpdatePlatform platform;
 
   Future<AppUpdateCheckResult> checkForUpdate() async {
@@ -231,6 +236,26 @@ class AppUpdateService {
     }
   }
 
+  Future<void> installDownloadedUpdate(String path) async {
+    if (platform != UpdatePlatform.android) {
+      throw const AppUpdateException(
+        'Automatic update installation is only available on Android.',
+      );
+    }
+    final apk = File(path);
+    if (!await apk.exists()) {
+      throw const AppUpdateException(
+        'The downloaded update file no longer exists.',
+      );
+    }
+    final opened = await _apkInstaller(apk.path);
+    if (!opened) {
+      throw const AppUpdateException(
+        'Android could not open the TelePlayer installer.',
+      );
+    }
+  }
+
   String _validatedRepository() {
     final value = repository.trim();
     final match = RegExp(
@@ -404,6 +429,31 @@ class AppUpdateService {
 
   static Future<bool> _launchExternally(Uri uri) {
     return launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  static const MethodChannel _updateInstallerChannel = MethodChannel(
+    'com.siam.teleplayer/app_update',
+  );
+
+  static Future<bool> _installApkWithPlatformChannel(String path) async {
+    try {
+      final opened = await _updateInstallerChannel.invokeMethod<bool>(
+        'installApk',
+        <String, Object?>{'path': path},
+      );
+      return opened == true;
+    } on PlatformException catch (error) {
+      final message = error.message?.trim();
+      throw AppUpdateException(
+        message == null || message.isEmpty
+            ? 'Android could not open the TelePlayer installer.'
+            : message,
+      );
+    } on MissingPluginException {
+      throw const AppUpdateException(
+        'This TelePlayer build does not include the Android update installer.',
+      );
+    }
   }
 
   static UpdatePlatform _detectPlatform() {
