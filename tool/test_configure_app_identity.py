@@ -33,7 +33,8 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             activity.parent.mkdir(parents=True, exist_ok=True)
             activity.write_text(
                 'package com.example.telegram_media_player\n\n'
-                'class MainActivity\n',
+                'import io.flutter.embedding.android.FlutterActivity\n\n'
+                'class MainActivity : FlutterActivity()\n',
                 encoding="utf-8",
             )
             manifest.write_text(
@@ -57,7 +58,16 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 root / "android/app/src/main/kotlin/com/siam/teleplayer/MainActivity.kt"
             )
             self.assertTrue(moved_activity.is_file())
-            self.assertIn('package com.siam.teleplayer', moved_activity.read_text())
+            moved_text = moved_activity.read_text()
+            self.assertIn('package com.siam.teleplayer\n\n', moved_text)
+            self.assertIn(
+                'import io.flutter.embedding.android.FlutterActivity',
+                moved_text,
+            )
+            self.assertNotIn(
+                'com.siam.teleplayerimport',
+                moved_text,
+            )
             self.assertFalse(activity.exists())
             self.assertEqual(
                 manifest_text.count('android.permission.INTERNET'),

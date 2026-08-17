@@ -120,7 +120,7 @@ def _configure_android_application_id(root: Path) -> None:
         for activity in activity_files:
             activity_text = activity.read_text(encoding="utf-8")
             activity_text, package_count = re.subn(
-                r'(?m)^package\s+[A-Za-z0-9_.]+\s*;?',
+                r'(?m)^package[ \t]+[A-Za-z0-9_.]+[ \t]*;?',
                 f'package {ANDROID_APPLICATION_ID}',
                 activity_text,
                 count=1,
