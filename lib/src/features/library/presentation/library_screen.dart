@@ -841,7 +841,7 @@ class _LibraryGroup {
 }
 
 class _PlayingEqualizerIcon extends StatefulWidget {
-  const _PlayingEqualizerIcon({required this.active, super.key});
+  const _PlayingEqualizerIcon({required this.active});
 
   final bool active;
 
@@ -897,7 +897,7 @@ class _PlayingEqualizerIconState extends State<_PlayingEqualizerIcon>
       dimension: 24,
       child: AnimatedBuilder(
         animation: _controller,
-        builder: (_, __) => CustomPaint(
+        builder: (_, _) => CustomPaint(
           painter: _EqualizerPainter(
             progress: widget.active ? _controller.value : 0,
             color: color,

@@ -397,7 +397,7 @@ class _AppHomeState extends State<AppHome> {
                   fit: StackFit.expand,
                   children: <Widget>[
                     ...previousChildren,
-                    if (currentChild != null) currentChild,
+                    ?currentChild,
                   ],
                 ),
                 transitionBuilder: (transitionChild, animation) {
