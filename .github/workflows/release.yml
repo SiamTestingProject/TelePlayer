@@ -631,7 +631,9 @@ jobs:
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v2
+        id: github_release
+        continue-on-error: true
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_NAME }}
@@ -640,3 +642,10 @@ jobs:
           body_path: release-notes.md
           files: release-assets/*
           fail_on_unmatched_files: true
+
+      - name: Retry GitHub Release after a transient API failure
+        if: steps.github_release.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tool/publish_github_release.sh

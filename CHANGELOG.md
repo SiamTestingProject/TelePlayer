@@ -8,6 +8,7 @@
 - Increased localhost streaming chunks to reduce native/Dart request overhead while preserving prompt incremental flushes and the existing replaced/completed temporary-song cleanup.
 - Cleared all `flutter analyze --fatal-infos` diagnostics in the continuous playlist and prepared-stream cleanup paths for the current non-null just_audio sequence API.
 - Raised the build number to 51 so the analyzer-corrected source cannot be confused with the earlier build 50 archive.
+- Moved GitHub release publishing to the Node 24 `softprops/action-gh-release@v3` runtime and added a GitHub CLI fallback with exponential backoff for transient Releases API `5xx` failures, including safe recovery when a release or some assets were already created.
 
 ## [1.4.30] - 2026-08-17
 

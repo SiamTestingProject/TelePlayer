@@ -53,6 +53,22 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("  quality:\n    name: Validate Flutter source", workflow)
         self.assertIn("needs: [quality, android, windows]", workflow)
 
+    def test_release_publish_uses_node24_and_has_a_503_fallback(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        fallback = (ROOT / "tool/publish_github_release.sh").read_text(encoding="utf-8")
+        self.assertIn("uses: softprops/action-gh-release@v3", workflow)
+        self.assertNotIn("uses: softprops/action-gh-release@v2", workflow)
+        self.assertIn("id: github_release", workflow)
+        self.assertIn("continue-on-error: true", workflow)
+        self.assertIn("if: steps.github_release.outcome == 'failure'", workflow)
+        self.assertIn("run: bash tool/publish_github_release.sh", workflow)
+        self.assertIn('RELEASE_MAX_ATTEMPTS:-7', fallback)
+        self.assertIn('gh release view "$RELEASE_TAG"', fallback)
+        self.assertIn('release create "$RELEASE_TAG"', fallback)
+        self.assertIn('gh "${create_args[@]}"', fallback)
+        self.assertIn('gh release upload "$RELEASE_TAG"', fallback)
+        self.assertIn("--clobber", fallback)
+
 
 
 if __name__ == "__main__":
