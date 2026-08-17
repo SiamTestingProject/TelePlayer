@@ -389,27 +389,31 @@ class _SectionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 64,
-      child: ListView(
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
-        children: _LibrarySection.values.map((section) {
-          return Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: ChoiceChip(
-              key: ValueKey<String>('library-section-${section.name}'),
-              selected: section == selected,
-              showCheckmark: false,
-              label: Text(_label(section)),
-              labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.2,
-                  ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              onSelected: (_) => onChanged(section),
-            ),
-          );
-        }).toList(growable: false),
+        child: Row(
+          children: _LibrarySection.values.map((section) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: ChoiceChip(
+                key: ValueKey<String>('library-section-${section.name}'),
+                selected: section == selected,
+                showCheckmark: false,
+                label: Text(_label(section)),
+                labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                onSelected: (_) => onChanged(section),
+              ),
+            );
+          }).toList(growable: false),
+        ),
       ),
     );
   }

@@ -11,6 +11,12 @@ class LibrarySectionsTest(unittest.TestCase):
         for label in ('SONGS', 'ALBUMS', 'ARTISTS', 'PLAYLISTS', 'LIKED', 'FOLDERS'):
             self.assertIn("'%s'" % label, source)
 
+    def test_section_tabs_are_eagerly_built_for_widget_tests_and_accessibility(self):
+        source = (ROOT / 'lib/src/features/library/presentation/library_screen.dart').read_text()
+        self.assertIn('SingleChildScrollView(', source)
+        self.assertIn('child: Row(', source)
+        self.assertIn("'library-section-${section.name}'", source)
+
     def test_liked_state_uses_stable_message_identity_and_persists(self):
         media = (ROOT / 'lib/src/features/library/models/media_item.dart').read_text()
         player = (ROOT / 'lib/src/features/player/application/player_controller.dart').read_text()
