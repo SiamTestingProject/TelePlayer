@@ -55,7 +55,7 @@ Telegram API ID, API hash, session credentials, tokens, signing keys, and keysto
 
 Do not commit `.env`, session, keystore, or generated secret files.
 
-Windows builds need the TDLib JSON runtime. GitHub release builds automatically bundle the `tdlib.native.win-x64` runtime beside `teleplayer.exe`, so both the portable ZIP and the installer include `tdjson.dll`. For local development, provide `tdjson.dll` next to the executable or configure its path in the Windows settings screen. The `TDJSON_WINDOWS_DLL_BASE64` repository secret can still override the bundled runtime with a custom DLL.
+Windows builds need the TDLib JSON runtime. The Windows identity step installs a post-build hook that automatically bundles `tdlib.native.win-x64` and the required Visual C++ runtime DLLs beside the executable for both local `flutter run` builds and GitHub releases. Repeat builds reuse the complete runtime already in that output folder. The `TDJSON_WINDOWS_DLL_BASE64` repository secret can still override the bundled runtime with a custom DLL.
 
 ## Local Development
 
@@ -71,7 +71,7 @@ flutter test
 flutter run --dart-define=GITHUB_REPOSITORY=owner/repository
 ```
 
-On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project.
+On Windows desktop, run `flutter config --enable-windows-desktop` before creating or building the host project. If `windows/` already exists, rerun `python tool/configure_app_identity.py --platform windows` once after updating TelePlayer; this adds the automatic TDLib step used by `flutter run -d windows`.
 The Android package/application ID is `com.siam.teleplayer`.
 The identity step also installs the Android background-audio service, receiver,
 foreground-service permissions, and loopback streaming permission. The TDLib
@@ -106,21 +106,21 @@ components and required permissions from `tool/configure_app_identity.py`.
 Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together. A push to `main` creates or updates the stable semantic
-release for the version in `pubspec.yaml` (for example `v1.4.32`). Non-main
+release for the version in `pubspec.yaml` (for example `v1.4.34`). Non-main
 branches use `build-<run number>` prereleases. You can also push a matching
-version tag such as `v1.4.32` explicitly.
+version tag such as `v1.4.34` explicitly.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.4.32.apk`
-- `TelePlayer-v1.4.32-arm64.apk`
-- `TelePlayer-v1.4.32-armeabi-v7a.apk`
-- `TelePlayer-v1.4.32-x86_64.apk`
-- `TelePlayer-v1.4.32-aab.aab`
-- `TelePlayer-v1.4.32-Setup.exe`
-- `TelePlayer-v1.4.32-windows-x64.zip`
+- `TelePlayer-v1.4.34.apk`
+- `TelePlayer-v1.4.34-arm64.apk`
+- `TelePlayer-v1.4.34-armeabi-v7a.apk`
+- `TelePlayer-v1.4.34-x86_64.apk`
+- `TelePlayer-v1.4.34-aab.aab`
+- `TelePlayer-v1.4.34-Setup.exe`
+- `TelePlayer-v1.4.34-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

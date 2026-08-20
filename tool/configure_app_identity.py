@@ -16,6 +16,29 @@ ANDROID_LAUNCHER_ICON_ROOT = BRANDING_ROOT / "android"
 ANDROID_ADAPTIVE_ICON_ROOT = ANDROID_LAUNCHER_ICON_ROOT / "adaptive"
 ANDROID_ROUND_ICON_ROOT = ANDROID_LAUNCHER_ICON_ROOT / "round"
 WINDOWS_APP_ICON = BRANDING_ROOT / "windows" / "app_icon.ico"
+WINDOWS_TDLIB_CMAKE_MARKER = "TELEPLAYER_WINDOWS_TDLIB_RUNTIME"
+WINDOWS_TDLIB_CMAKE_BLOCK = rf"""
+# {WINDOWS_TDLIB_CMAKE_MARKER}
+# Keep local `flutter run -d windows` builds as complete as packaged releases.
+# The bundler is idempotent and skips its download when the runtime is present.
+if(WIN32)
+  set(TELEPLAYER_TDLIB_BUNDLER
+      "${{CMAKE_CURRENT_SOURCE_DIR}}/../../tool/bundle_windows_tdlib.ps1")
+  if(NOT EXISTS "${{TELEPLAYER_TDLIB_BUNDLER}}")
+    message(FATAL_ERROR "TelePlayer TDLib bundler is missing: ${{TELEPLAYER_TDLIB_BUNDLER}}")
+  endif()
+  add_custom_command(
+    TARGET ${{BINARY_NAME}}
+    POST_BUILD
+    COMMAND powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass
+            -File "${{TELEPLAYER_TDLIB_BUNDLER}}"
+            -ReleaseDir "$<TARGET_FILE_DIR:${{BINARY_NAME}}>"
+            -SkipIfPresent
+    COMMENT "Preparing the TelePlayer Telegram runtime"
+    VERBATIM
+  )
+endif()
+""".strip()
 ANDROID_LAUNCHER_DENSITIES = (
     "mipmap-mdpi",
     "mipmap-hdpi",
@@ -572,6 +595,18 @@ def configure_windows(root: Path) -> None:
             runner_rc,
             rf'(VALUE "{field}", ")[^"]*(" "\\0")',
             rf'\g<1>{value}\g<2>',
+        )
+
+    runner_cmake = windows / "runner" / "CMakeLists.txt"
+    cmake_text = runner_cmake.read_text(encoding="utf-8")
+    if WINDOWS_TDLIB_CMAKE_MARKER not in cmake_text:
+        if "add_executable(${BINARY_NAME}" not in cmake_text:
+            raise RuntimeError(
+                f"Expected Windows runner target was not found in {runner_cmake}"
+            )
+        runner_cmake.write_text(
+            f"{cmake_text.rstrip()}\n\n{WINDOWS_TDLIB_CMAKE_BLOCK}\n",
+            encoding="utf-8",
         )
 
 

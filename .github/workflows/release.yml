@@ -417,7 +417,7 @@ jobs:
         shell: pwsh
         env:
           TDJSON_WINDOWS_DLL_BASE64: ${{ secrets.TDJSON_WINDOWS_DLL_BASE64 }}
-        run: ./tool/bundle_windows_tdlib.ps1
+        run: ./tool/bundle_windows_tdlib.ps1 -SkipIfPresent
 
       - name: Package portable Windows build
         shell: pwsh

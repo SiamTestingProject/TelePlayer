@@ -15,7 +15,11 @@ String? resolveTdjsonLibraryPath({
 }) {
   final configured = configuredPath?.trim();
   if (configured != null && configured.isNotEmpty) {
-    return configured;
+    final configuredExists =
+        fileExists?.call(configured) ?? io.File(configured).existsSync();
+    if (operatingSystem != 'windows' || configuredExists) {
+      return configured;
+    }
   }
   return switch (operatingSystem) {
     'android' || 'linux' => 'libtdjson.so',
@@ -241,7 +245,7 @@ class TdlibGateway {
       'android' =>
         'The bundled Telegram library could not be loaded. Reinstall the APK that matches this device and try again.',
       'windows' =>
-        'tdjson.dll could not be loaded. Reinstall the complete Windows package, install Microsoft Visual C++ Redistributable 2019 or newer, or select a valid TDLib DLL in Settings.',
+        'tdjson.dll or one of its Windows dependencies could not be loaded. Reinstall the complete Windows package or select a valid TDLib DLL in Settings.',
       _ => 'The Telegram native library could not be loaded on this device.',
     };
     return AppException(

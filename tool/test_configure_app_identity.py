@@ -11,6 +11,7 @@ from configure_app_identity import (
     ANDROID_LAUNCHER_ICON_ROOT,
     ANDROID_ROUND_ICON_ROOT,
     WINDOWS_APP_ICON,
+    WINDOWS_TDLIB_CMAKE_MARKER,
     configure_android,
     configure_windows,
 )
@@ -278,6 +279,12 @@ class ConfigureAppIdentityTest(unittest.TestCase):
                 'window.CreateAndShow(L"telegram_media_player", origin, size);\n',
                 encoding="utf-8",
             )
+            (runner / "CMakeLists.txt").write_text(
+                "add_executable(${BINARY_NAME} WIN32\n"
+                '  \"main.cpp\"\n'
+                ")\n",
+                encoding="utf-8",
+            )
             runner_rc = runner / "Runner.rc"
             runner_rc.write_text(
                 'VALUE "FileDescription", "telegram_media_player" "\\0"\n'
@@ -297,6 +304,11 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             self.assertIn('VALUE "InternalName", "teleplayer"', resource_text)
             self.assertIn('VALUE "OriginalFilename", "teleplayer.exe"', resource_text)
             self.assertIn('VALUE "ProductName", "TelePlayer"', resource_text)
+            runner_cmake = (runner / "CMakeLists.txt").read_text()
+            self.assertEqual(runner_cmake.count(WINDOWS_TDLIB_CMAKE_MARKER), 1)
+            self.assertIn("bundle_windows_tdlib.ps1", runner_cmake)
+            self.assertIn("$<TARGET_FILE_DIR:${BINARY_NAME}>", runner_cmake)
+            self.assertIn("-SkipIfPresent", runner_cmake)
             installed_icon = runner / "resources" / "app_icon.ico"
             self.assertTrue(installed_icon.is_file())
             self.assertEqual(installed_icon.read_bytes(), WINDOWS_APP_ICON.read_bytes())

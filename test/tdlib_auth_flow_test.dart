@@ -25,8 +25,25 @@ void main() {
       resolveTdjsonLibraryPath(
         configuredPath: r'C:\Telegram\custom-tdjson.dll',
         operatingSystem: 'windows',
+        fileExists: (_) => true,
       ),
       r'C:\Telegram\custom-tdjson.dll',
+    );
+  });
+
+  test('ignores a stale Windows TDLib setting when a bundled DLL exists', () {
+    final separator = Platform.pathSeparator;
+    final appDirectory = '${Directory.systemTemp.path}${separator}TelePlayer';
+    final executablePath = '${appDirectory}${separator}teleplayer.exe';
+    final bundledPath = '${appDirectory}${separator}tdjson.dll';
+    expect(
+      resolveTdjsonLibraryPath(
+        configuredPath: r'C:\Old\missing-tdjson.dll',
+        operatingSystem: 'windows',
+        executablePath: executablePath,
+        fileExists: (path) => path == bundledPath,
+      ),
+      bundledPath,
     );
   });
 

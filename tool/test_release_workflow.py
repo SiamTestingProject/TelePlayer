@@ -76,12 +76,18 @@ class ReleaseWorkflowTest(unittest.TestCase):
         bundler = (ROOT / "tool/bundle_windows_tdlib.ps1").read_text(encoding="utf-8")
         self.assertIn('TDLIB_NATIVE_VERSION: "1.8.66"', workflow)
         self.assertIn("- name: Bundle Windows TDLib runtime", workflow)
-        self.assertIn("run: ./tool/bundle_windows_tdlib.ps1", workflow)
+        self.assertIn("run: ./tool/bundle_windows_tdlib.ps1 -SkipIfPresent", workflow)
         self.assertIn("tdlib.native.win-x64", bundler)
         self.assertIn("Invoke-WebRequest", bundler)
         self.assertIn("TDJSON_WINDOWS_DLL_BASE64", bundler)
         self.assertIn("tdjson.dll", bundler)
+        self.assertIn("Copy-VisualCRuntime", bundler)
+        self.assertIn("vcruntime140.dll", bundler)
+        self.assertIn("vcruntime140_1.dll", bundler)
+        self.assertIn("msvcp140.dll", bundler)
         self.assertIn("Copy-Item", bundler)
+        self.assertIn("SkipIfPresent", bundler)
+        self.assertIn("Test-TdlibRuntimePresent", bundler)
 
 
 

@@ -2,7 +2,8 @@ param(
   [string]$ReleaseDir = "build/windows/x64/runner/Release",
   [string]$PackageVersion = "",
   [string]$PackageUri = "",
-  [string]$SecretBase64 = $env:TDJSON_WINDOWS_DLL_BASE64
+  [string]$SecretBase64 = $env:TDJSON_WINDOWS_DLL_BASE64,
+  [switch]$SkipIfPresent
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,6 +22,43 @@ if (-not (Test-Path $ReleaseDir)) {
 
 $resolvedReleaseDir = (Resolve-Path $ReleaseDir).Path
 
+function Copy-VisualCRuntime {
+  param([string]$DirectoryPath)
+
+  $requiredRuntimeNames = @(
+    "msvcp140.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll"
+  )
+  $optionalRuntimeNames = @(
+    "concrt140.dll",
+    "msvcp140_1.dll",
+    "msvcp140_2.dll",
+    "msvcp140_atomic_wait.dll",
+    "msvcp140_codecvt_ids.dll",
+    "vccorlib140.dll",
+    "vcruntime140_threads.dll"
+  )
+  $runtimeNames = $requiredRuntimeNames + $optionalRuntimeNames
+  $sourceDir = Join-Path $env:SystemRoot "System32"
+  $missingRequired = @()
+
+  foreach ($runtimeName in $runtimeNames) {
+    $runtimePath = Join-Path $sourceDir $runtimeName
+    if (Test-Path $runtimePath) {
+      Copy-Item -LiteralPath $runtimePath -Destination (Join-Path $DirectoryPath $runtimeName) -Force
+      $runtime = Get-Item $runtimePath
+      Write-Host "Bundled $runtimeName ($([math]::Round($runtime.Length / 1MB, 2)) MB)."
+    } elseif ($requiredRuntimeNames -contains $runtimeName) {
+      $missingRequired += $runtimeName
+    }
+  }
+
+  if ($missingRequired.Count -gt 0) {
+    throw "Required Microsoft Visual C++ runtime files are missing from ${sourceDir}: $($missingRequired -join ', ')"
+  }
+}
+
 function Assert-TdjsonPresent {
   param([string]$DirectoryPath)
 
@@ -35,80 +73,114 @@ function Assert-TdjsonPresent {
   }
 }
 
+function Test-TdlibRuntimePresent {
+  param([string]$DirectoryPath)
+
+  $requiredNames = @(
+    "tdjson.dll",
+    "msvcp140.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll"
+  )
+  foreach ($requiredName in $requiredNames) {
+    $requiredPath = Join-Path $DirectoryPath $requiredName
+    if (-not (Test-Path $requiredPath)) {
+      return $false
+    }
+    if ((Get-Item $requiredPath).Length -le 0) {
+      return $false
+    }
+  }
+  return $true
+}
+
+# Local flutter runs invoke this script after each executable link. Avoid a
+# network request once the complete native runtime is already beside the app.
+# A configured secret deliberately bypasses this shortcut so release builds can
+# replace the public NuGet DLL with the repository's custom TDLib build.
+if (
+  $SkipIfPresent -and
+  [string]::IsNullOrWhiteSpace($SecretBase64) -and
+  (Test-TdlibRuntimePresent -DirectoryPath $resolvedReleaseDir)
+) {
+  Write-Host "TDLib and the required Visual C++ runtime are already bundled."
+  exit 0
+}
+
 if (-not [string]::IsNullOrWhiteSpace($SecretBase64)) {
   $dllPath = Join-Path $resolvedReleaseDir "tdjson.dll"
   [IO.File]::WriteAllBytes($dllPath, [Convert]::FromBase64String($SecretBase64))
   Assert-TdjsonPresent -DirectoryPath $resolvedReleaseDir
   Write-Host "Bundled tdjson.dll from TDJSON_WINDOWS_DLL_BASE64."
-  exit 0
-}
+} else {
+  if ([string]::IsNullOrWhiteSpace($PackageUri)) {
+    $PackageUri = "https://www.nuget.org/api/v2/package/tdlib.native.win-x64/$PackageVersion"
+  }
 
-if ([string]::IsNullOrWhiteSpace($PackageUri)) {
-  $PackageUri = "https://www.nuget.org/api/v2/package/tdlib.native.win-x64/$PackageVersion"
-}
+  $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("teleplayer-tdlib-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 
-$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("teleplayer-tdlib-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+  try {
+    $packagePath = Join-Path $tempRoot "tdlib.native.win-x64.$PackageVersion.zip"
+    $extractDir = Join-Path $tempRoot "package"
 
-try {
-  $packagePath = Join-Path $tempRoot "tdlib.native.win-x64.$PackageVersion.zip"
-  $extractDir = Join-Path $tempRoot "package"
-
-  $delaySeconds = 5
-  for ($attempt = 1; $attempt -le 3; $attempt++) {
-    try {
-      Write-Host "Downloading tdlib.native.win-x64 $PackageVersion from NuGet (attempt $attempt of 3)."
-      Invoke-WebRequest -Uri $PackageUri -OutFile $packagePath -UseBasicParsing
-      break
-    } catch {
-      if ($attempt -eq 3) {
-        throw
+    $delaySeconds = 5
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+      try {
+        Write-Host "Downloading tdlib.native.win-x64 $PackageVersion from NuGet (attempt $attempt of 3)."
+        Invoke-WebRequest -Uri $PackageUri -OutFile $packagePath -UseBasicParsing
+        break
+      } catch {
+        if ($attempt -eq 3) {
+          throw
+        }
+        Write-Warning "TDLib runtime download failed; retrying in $delaySeconds seconds."
+        Start-Sleep -Seconds $delaySeconds
+        $delaySeconds *= 2
       }
-      Write-Warning "TDLib runtime download failed; retrying in $delaySeconds seconds."
-      Start-Sleep -Seconds $delaySeconds
-      $delaySeconds *= 2
     }
-  }
 
-  if (-not (Test-Path $packagePath)) {
-    throw "TDLib runtime package was not downloaded"
-  }
+    if (-not (Test-Path $packagePath)) {
+      throw "TDLib runtime package was not downloaded"
+    }
 
-  $package = Get-Item $packagePath
-  if ($package.Length -le 0) {
-    throw "TDLib runtime package is empty"
-  }
+    $package = Get-Item $packagePath
+    if ($package.Length -le 0) {
+      throw "TDLib runtime package is empty"
+    }
 
-  Expand-Archive -Path $packagePath -DestinationPath $extractDir -Force
+    Expand-Archive -Path $packagePath -DestinationPath $extractDir -Force
 
-  $candidateDirs = @(
-    (Join-Path $extractDir "runtimes/win-x64/native"),
-    (Join-Path $extractDir "runtimes/win-x64")
-  )
-  $nativeDir = $candidateDirs |
-    Where-Object { Test-Path (Join-Path $_ "tdjson.dll") } |
-    Select-Object -First 1
-
-  if (-not $nativeDir) {
-    $tdjson = Get-ChildItem -Path $extractDir -Recurse -Filter "tdjson.dll" -File |
+    $candidateDirs = @(
+      (Join-Path $extractDir "runtimes/win-x64/native"),
+      (Join-Path $extractDir "runtimes/win-x64")
+    )
+    $nativeDir = $candidateDirs |
+      Where-Object { Test-Path (Join-Path $_ "tdjson.dll") } |
       Select-Object -First 1
-    if (-not $tdjson) {
-      throw "tdjson.dll was not found in the tdlib.native.win-x64 package"
+
+    if (-not $nativeDir) {
+      $tdjson = Get-ChildItem -Path $extractDir -Recurse -Filter "tdjson.dll" -File |
+        Select-Object -First 1
+      if (-not $tdjson) {
+        throw "tdjson.dll was not found in the tdlib.native.win-x64 package"
+      }
+      $nativeDir = $tdjson.Directory.FullName
     }
-    $nativeDir = $tdjson.Directory.FullName
-  }
 
-  $dlls = Get-ChildItem -Path $nativeDir -Filter "*.dll" -File
-  if (-not $dlls) {
-    throw "No DLL files were found in the TDLib runtime directory: $nativeDir"
-  }
+    $dlls = Get-ChildItem -Path $nativeDir -Filter "*.dll" -File
+    if (-not $dlls) {
+      throw "No DLL files were found in the TDLib runtime directory: $nativeDir"
+    }
 
-  foreach ($dll in $dlls) {
-    Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $resolvedReleaseDir $dll.Name) -Force
-    Write-Host "Bundled $($dll.Name) ($([math]::Round($dll.Length / 1MB, 2)) MB)."
+    foreach ($dll in $dlls) {
+      Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $resolvedReleaseDir $dll.Name) -Force
+      Write-Host "Bundled $($dll.Name) ($([math]::Round($dll.Length / 1MB, 2)) MB)."
+    }
+  } finally {
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
-
-  Assert-TdjsonPresent -DirectoryPath $resolvedReleaseDir
-} finally {
-  Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+Copy-VisualCRuntime -DirectoryPath $resolvedReleaseDir
+Assert-TdjsonPresent -DirectoryPath $resolvedReleaseDir

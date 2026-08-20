@@ -1,3 +1,15 @@
+## [1.4.34] - 2026-08-20
+
+- Fixed local `flutter run -d windows` builds launching without TDLib by adding an automatic post-build step that places `tdjson.dll` and its required Visual C++ runtime files beside the Debug or Release executable.
+- Repeated Windows builds now skip the TDLib network download when a complete runtime is already present, keeping local runs and release packaging fast.
+- A stale custom TDLib path in Settings no longer hides a valid DLL bundled beside TelePlayer.
+
+## [1.4.33] - 2026-08-20
+
+- Fixed Windows Telegram sign-in still failing on machines without the Microsoft Visual C++ runtime installed by bundling the required VC runtime DLLs beside `teleplayer.exe`.
+- The Windows release job now fails packaging if the VC runtime dependencies are missing on the build runner instead of publishing an installer that can still show `tdjson.dll could not be loaded`.
+- Clarified the TDLib startup error so it points to `tdjson.dll` or one of its Windows dependencies, matching the actual native-load failure.
+
 ## [1.4.32] - 2026-08-19
 
 - Fixed Windows releases starting without Telegram sign-in support by bundling the TDLib Windows runtime into both the portable ZIP and Inno Setup installer.
