@@ -51,11 +51,11 @@ Telegram API ID, API hash, session credentials, tokens, signing keys, and keysto
 - `ANDROID_KEY_ALIAS`
 - `ANDROID_KEY_PASSWORD`
 - `ANDROID_STORE_PASSWORD`
-- `TDJSON_WINDOWS_DLL_BASE64` for optionally bundling `tdjson.dll` in Windows release ZIPs
+- `TDJSON_WINDOWS_DLL_BASE64` to override the automatically bundled Windows TDLib runtime with a custom `tdjson.dll`
 
 Do not commit `.env`, session, keystore, or generated secret files.
 
-Windows builds need the TDLib JSON runtime. Provide `tdjson.dll` next to the executable, configure its path in the Windows settings screen, or store a base64-encoded DLL in the `TDJSON_WINDOWS_DLL_BASE64` repository secret for release packaging.
+Windows builds need the TDLib JSON runtime. GitHub release builds automatically bundle the `tdlib.native.win-x64` runtime beside `teleplayer.exe`, so both the portable ZIP and the installer include `tdjson.dll`. For local development, provide `tdjson.dll` next to the executable or configure its path in the Windows settings screen. The `TDJSON_WINDOWS_DLL_BASE64` repository secret can still override the bundled runtime with a custom DLL.
 
 ## Local Development
 
@@ -106,21 +106,21 @@ components and required permissions from `tool/configure_app_identity.py`.
 Every branch push and manual workflow run builds Android and Windows. After both
 platform jobs finish successfully, one release job downloads all outputs and
 publishes them together. A push to `main` creates or updates the stable semantic
-release for the version in `pubspec.yaml` (for example `v1.4.31`). Non-main
+release for the version in `pubspec.yaml` (for example `v1.4.32`). Non-main
 branches use `build-<run number>` prereleases. You can also push a matching
-version tag such as `v1.4.31` explicitly.
+version tag such as `v1.4.32` explicitly.
 Publishing a GitHub Release manually also rebuilds the project and attaches all
 generated files to that release. A version tag must match the version in
 `pubspec.yaml`, which prevents the updater from offering the currently installed
 build again. Output names include:
 
-- `TelePlayer-v1.4.31.apk`
-- `TelePlayer-v1.4.31-arm64.apk`
-- `TelePlayer-v1.4.31-armeabi-v7a.apk`
-- `TelePlayer-v1.4.31-x86_64.apk`
-- `TelePlayer-v1.4.31-aab.aab`
-- `TelePlayer-v1.4.31-Setup.exe`
-- `TelePlayer-v1.4.31-windows-x64.zip`
+- `TelePlayer-v1.4.32.apk`
+- `TelePlayer-v1.4.32-arm64.apk`
+- `TelePlayer-v1.4.32-armeabi-v7a.apk`
+- `TelePlayer-v1.4.32-x86_64.apk`
+- `TelePlayer-v1.4.32-aab.aab`
+- `TelePlayer-v1.4.32-Setup.exe`
+- `TelePlayer-v1.4.32-windows-x64.zip`
 
 The Windows `Setup.exe` is a real per-user installer created with Inno Setup. It
 installs the complete Flutter release, creates Start Menu and optional desktop

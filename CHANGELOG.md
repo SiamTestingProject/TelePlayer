@@ -1,3 +1,10 @@
+## [1.4.32] - 2026-08-19
+
+- Fixed Windows releases starting without Telegram sign-in support by bundling the TDLib Windows runtime into both the portable ZIP and Inno Setup installer.
+- The Windows release job now downloads `tdlib.native.win-x64` automatically when no custom `TDJSON_WINDOWS_DLL_BASE64` secret is configured, and fails packaging if `tdjson.dll` is missing instead of publishing a broken build.
+- TelePlayer now prefers the `tdjson.dll` placed beside `teleplayer.exe`, making Start Menu, installer, and portable ZIP launches resolve the same native runtime path.
+- Updated the Windows TDLib startup message to mention the Microsoft Visual C++ Redistributable dependency when a bundled DLL cannot be loaded.
+
 ## [1.4.31] - 2026-08-17
 
 - Made the Library mini-player follow a downward drag while its occupied space collapses continuously, so it slides smoothly behind the navigation bar without an abrupt final jump.

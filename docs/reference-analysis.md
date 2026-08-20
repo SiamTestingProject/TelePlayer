@@ -14,7 +14,7 @@ Reference: https://github.com/weebzone/Telegram-Stremio
 - Metadata: the reference enriches indexed media with TMDb/Cinemeta metadata. The Flutter implementation keeps local filename, MIME type, size, duration, and thumbnail hooks, while leaving external metadata enrichment out of scope for the first client app.
 - Thumbnails: the reference retrieves Telegram thumbnails from media messages and caches them. This app exposes a thumbnail loading path through TDLib and maps missing thumbnails to a non-fatal friendly state.
 - Sessions: the reference stores bot/user sessions on the server side. This app delegates local session persistence to TDLib's encrypted database and stores only user-provided app config in secure storage.
-- Desktop runtime: Windows uses the same TDLib workflow, but TDJSON is resolved from a configured DLL path or from `tdjson.dll` beside the executable. The DLL is supplied outside source control and can be injected into release packaging through a repository secret.
+- Desktop runtime: Windows uses the same TDLib workflow, but TDJSON is resolved from a configured DLL path or from `tdjson.dll` beside the executable. Release packaging downloads and bundles the Windows TDLib runtime automatically, while a repository secret can still inject a custom DLL.
 - Error handling: the reference logs Telegram failures and tracks client failures/rate limits. This app centralizes errors in `AppException` and maps network, auth, deleted message/media, private channel, invalid media, codec, playback, API, rate-limit, and missing-thumbnail failures to user-friendly UI copy.
 
 ## Deliberately Not Ported

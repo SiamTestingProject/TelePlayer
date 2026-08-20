@@ -30,6 +30,25 @@ void main() {
     );
   });
 
+  test('prefers bundled Windows TDLib DLL beside the executable', () {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'teleplayer_tdjson_test_',
+    );
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final dllPath = '${tempDir.path}${Platform.pathSeparator}tdjson.dll';
+    File(dllPath).writeAsBytesSync([1]);
+
+    expect(
+      resolveTdjsonLibraryPath(
+        configuredPath: null,
+        operatingSystem: 'windows',
+        executablePath:
+            '${tempDir.path}${Platform.pathSeparator}teleplayer.exe',
+      ),
+      dllPath,
+    );
+  });
+
   test('preserves TDLib response metadata used to complete requests', () {
     final json = tdObjectToJsonWithMetadata(
       const td.Ok(extra: 'request-42', clientId: 7),

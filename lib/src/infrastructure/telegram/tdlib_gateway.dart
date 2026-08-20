@@ -10,6 +10,8 @@ import '../../core/errors/app_exception.dart';
 String? resolveTdjsonLibraryPath({
   required String? configuredPath,
   required String operatingSystem,
+  String? executablePath,
+  bool Function(String path)? fileExists,
 }) {
   final configured = configuredPath?.trim();
   if (configured != null && configured.isNotEmpty) {
@@ -17,10 +19,35 @@ String? resolveTdjsonLibraryPath({
   }
   return switch (operatingSystem) {
     'android' || 'linux' => 'libtdjson.so',
-    'windows' => 'tdjson.dll',
+    'windows' =>
+      _resolveBundledWindowsTdjson(executablePath, fileExists) ?? 'tdjson.dll',
     'macos' => 'libtdjson.dylib',
     _ => null,
   };
+}
+
+String? _resolveBundledWindowsTdjson(
+  String? executablePath,
+  bool Function(String path)? fileExists,
+) {
+  final providedExecutable = executablePath?.trim();
+  final resolvedExecutable =
+      providedExecutable == null || providedExecutable.isEmpty
+          ? io.Platform.resolvedExecutable
+          : providedExecutable;
+  if (resolvedExecutable.trim().isEmpty) {
+    return null;
+  }
+
+  final executableFile = io.File(resolvedExecutable);
+  final tdjsonPath =
+      '${executableFile.parent.path}${io.Platform.pathSeparator}tdjson.dll';
+  bool exists(String path) =>
+      fileExists?.call(path) ?? io.File(path).existsSync();
+  if (exists(tdjsonPath)) {
+    return tdjsonPath;
+  }
+  return null;
 }
 
 Map<String, dynamic> tdObjectToJsonWithMetadata(TdObject object) {
@@ -214,7 +241,7 @@ class TdlibGateway {
       'android' =>
         'The bundled Telegram library could not be loaded. Reinstall the APK that matches this device and try again.',
       'windows' =>
-        'tdjson.dll could not be loaded. Reinstall the complete Windows package or select a valid TDLib DLL in Settings.',
+        'tdjson.dll could not be loaded. Reinstall the complete Windows package, install Microsoft Visual C++ Redistributable 2019 or newer, or select a valid TDLib DLL in Settings.',
       _ => 'The Telegram native library could not be loaded on this device.',
     };
     return AppException(
