@@ -309,6 +309,9 @@ class ConfigureAppIdentityTest(unittest.TestCase):
             self.assertIn("bundle_windows_tdlib.ps1", runner_cmake)
             self.assertIn("$<TARGET_FILE_DIR:${BINARY_NAME}>", runner_cmake)
             self.assertIn("-SkipIfPresent", runner_cmake)
+            self.assertIn("add_custom_target(", runner_cmake)
+            self.assertIn("teleplayer_tdlib_runtime ALL", runner_cmake)
+            self.assertNotIn("POST_BUILD", runner_cmake)
             installed_icon = runner / "resources" / "app_icon.ico"
             self.assertTrue(installed_icon.is_file())
             self.assertEqual(installed_icon.read_bytes(), WINDOWS_APP_ICON.read_bytes())

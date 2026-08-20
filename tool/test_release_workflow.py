@@ -74,7 +74,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_windows_release_bundles_tdlib_runtime(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         bundler = (ROOT / "tool/bundle_windows_tdlib.ps1").read_text(encoding="utf-8")
-        self.assertIn('TDLIB_NATIVE_VERSION: "1.8.66"', workflow)
+        self.assertIn('TDLIB_NATIVE_VERSION: "1.8.21.2"', workflow)
         self.assertIn("- name: Bundle Windows TDLib runtime", workflow)
         self.assertIn("run: ./tool/bundle_windows_tdlib.ps1 -SkipIfPresent", workflow)
         self.assertIn("tdlib.native.win-x64", bundler)
@@ -88,6 +88,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("Copy-Item", bundler)
         self.assertIn("SkipIfPresent", bundler)
         self.assertIn("Test-TdlibRuntimePresent", bundler)
+        self.assertIn(".teleplayer-tdlib-version", bundler)
 
 
 

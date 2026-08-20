@@ -1,3 +1,10 @@
+## [1.4.36] - 2026-08-20
+
+- Fixed Windows TDLib remaining in `authorizationStateWaitTdlibParameters` by matching the bundled native runtime (`1.8.21.2`) to the app's TDLib 1.8.15 Dart API instead of loading the incompatible 1.8.66 schema.
+- Added a runtime-version marker so local and release builds replace an already bundled incompatible `tdjson.dll` instead of incorrectly skipping it.
+- The Windows TDLib bundler now runs for Dart-only builds as well as executable relinks, while complete matching runtimes still skip the download.
+- Increased the authorization preparation allowance to 30 seconds for legitimate slower database startup.
+
 ## [1.4.35] - 2026-08-20
 
 - Fixed Library loading and caching failing with `Initialization parameters are needed: call setTdlibParameters first` after TDLib recreates its native Windows client.

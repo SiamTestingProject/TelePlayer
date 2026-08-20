@@ -10,14 +10,14 @@ $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
   if ([string]::IsNullOrWhiteSpace($env:TDLIB_NATIVE_VERSION)) {
-    $PackageVersion = "1.8.66"
+    $PackageVersion = "1.8.21.2"
   } else {
     $PackageVersion = $env:TDLIB_NATIVE_VERSION
   }
 }
 
 if (-not (Test-Path $ReleaseDir)) {
-  throw "Windows release directory missing: $ReleaseDir"
+  New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 }
 
 $resolvedReleaseDir = (Resolve-Path $ReleaseDir).Path
@@ -74,7 +74,10 @@ function Assert-TdjsonPresent {
 }
 
 function Test-TdlibRuntimePresent {
-  param([string]$DirectoryPath)
+  param(
+    [string]$DirectoryPath,
+    [string]$ExpectedVersion
+  )
 
   $requiredNames = @(
     "tdjson.dll",
@@ -91,6 +94,13 @@ function Test-TdlibRuntimePresent {
       return $false
     }
   }
+  $versionMarker = Join-Path $DirectoryPath ".teleplayer-tdlib-version"
+  if (-not (Test-Path $versionMarker)) {
+    return $false
+  }
+  if ((Get-Content -LiteralPath $versionMarker -Raw).Trim() -ne $ExpectedVersion) {
+    return $false
+  }
   return $true
 }
 
@@ -101,7 +111,7 @@ function Test-TdlibRuntimePresent {
 if (
   $SkipIfPresent -and
   [string]::IsNullOrWhiteSpace($SecretBase64) -and
-  (Test-TdlibRuntimePresent -DirectoryPath $resolvedReleaseDir)
+  (Test-TdlibRuntimePresent -DirectoryPath $resolvedReleaseDir -ExpectedVersion $PackageVersion)
 ) {
   Write-Host "TDLib and the required Visual C++ runtime are already bundled."
   exit 0
@@ -184,3 +194,12 @@ if (-not [string]::IsNullOrWhiteSpace($SecretBase64)) {
 
 Copy-VisualCRuntime -DirectoryPath $resolvedReleaseDir
 Assert-TdjsonPresent -DirectoryPath $resolvedReleaseDir
+$bundledVersion = if ([string]::IsNullOrWhiteSpace($SecretBase64)) {
+  $PackageVersion
+} else {
+  "custom"
+}
+[IO.File]::WriteAllText(
+  (Join-Path $resolvedReleaseDir ".teleplayer-tdlib-version"),
+  "$bundledVersion`n"
+)

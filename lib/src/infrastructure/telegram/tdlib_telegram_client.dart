@@ -844,7 +844,7 @@ class TdlibTelegramClient
   }
 
   Future<void> _refreshAuthorizationState() async {
-    for (var attempt = 0; attempt < 40; attempt++) {
+    for (var attempt = 0; attempt < 300; attempt++) {
       final state = await _gateway.send(const td.GetAuthorizationState());
       final needsRefresh = await _processAuthorizationState(state);
       if (!needsRefresh) {
@@ -948,7 +948,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.4.35',
+        applicationVersion: '1.4.36',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
