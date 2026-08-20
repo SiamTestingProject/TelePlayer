@@ -137,6 +137,81 @@ void main() {
     expect(steps.last.kind, AuthStepKind.needsPhone);
   });
 
+  test('reapplies TDLib parameters and retries after a native client restart',
+      () async {
+    final supportDirectory = await Directory.systemTemp.createTemp(
+      'teleplayer-auth-recovery-test-',
+    );
+    final authorizationStates = <Map<String, dynamic>>[
+      <String, dynamic>{'@type': 'authorizationStateReady'},
+    ];
+    var firstChatRequest = true;
+    final gateway = _FakeTdlibGateway(
+      authorizationStates: authorizationStates,
+      requestHandler: (request) {
+        switch (request.getConstructor()) {
+          case 'getChat':
+            if (firstChatRequest) {
+              firstChatRequest = false;
+              authorizationStates
+                ..clear()
+                ..addAll(<Map<String, dynamic>>[
+                  <String, dynamic>{
+                    '@type': 'authorizationStateWaitTdlibParameters',
+                  },
+                  <String, dynamic>{'@type': 'authorizationStateReady'},
+                ]);
+              throw const AppException(
+                AppErrorCode.telegramApi,
+                message:
+                    'Initialization parameters are needed: call setTdlibParameters first',
+              );
+            }
+            return <String, dynamic>{
+              '@type': 'chat',
+              'id': -1001234567890,
+              'title': 'Recovered Music',
+            };
+          case 'getChatHistory':
+            return <String, dynamic>{
+              '@type': 'messages',
+              'messages': <Object?>[],
+            };
+          default:
+            return <String, dynamic>{'@type': 'ok'};
+        }
+      },
+    );
+    final client = TdlibTelegramClient(
+      gateway,
+      applicationSupportDirectory: () async => supportDirectory,
+    );
+
+    addTearDown(() async {
+      await client.close();
+      await supportDirectory.delete(recursive: true);
+    });
+
+    await client.initialize(_configuredSettings);
+    await client.listRecentMedia(
+      channelIds: const <int>[-1001234567890],
+      limitPerChannel: 60,
+    );
+
+    expect(
+      gateway.requestTypes,
+      <String>[
+        'getAuthorizationState',
+        'getChat',
+        'getAuthorizationState',
+        'setTdlibParameters',
+        'getAuthorizationState',
+        'getChat',
+        'getChatHistory',
+      ],
+    );
+  });
+
   test('rejects an invalid phone before calling TDLib', () async {
     final gateway = _FakeTdlibGateway();
     final client = TdlibTelegramClient(gateway);

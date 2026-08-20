@@ -1,3 +1,9 @@
+## [1.4.35] - 2026-08-20
+
+- Fixed Library loading and caching failing with `Initialization parameters are needed: call setTdlibParameters first` after TDLib recreates its native Windows client.
+- Authorized Telegram requests now coordinate one TDLib parameter recovery, wait for the authorization state to advance, and retry the interrupted request once.
+- Extended authorization-state preparation to tolerate slower database startup without exposing a premature Library error.
+
 ## [1.4.34] - 2026-08-20
 
 - Fixed local `flutter run -d windows` builds launching without TDLib by adding an automatic post-build step that places `tdjson.dll` and its required Visual C++ runtime files beside the Debug or Release executable.

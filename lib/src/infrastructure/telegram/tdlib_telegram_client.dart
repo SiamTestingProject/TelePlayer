@@ -43,6 +43,7 @@ class TdlibTelegramClient
   AppSettings? _settings;
   StreamSubscription<Map<String, dynamic>>? _updatesSub;
   Future<void>? _tdlibParametersFuture;
+  Future<void>? _tdlibParameterRecoveryFuture;
 
   @override
   Stream<AuthStep> get authSteps => _authSteps.stream;
@@ -161,7 +162,7 @@ class TdlibTelegramClient
     await _ensureChatsAvailable(channelIds);
     final items = <MediaItem>[];
     for (final chatId in channelIds) {
-      final response = await _gateway.send(
+      final response = await _sendAuthorized(
         td.GetChatHistory(
           chatId: chatId,
           fromMessageId: 0,
@@ -197,7 +198,7 @@ class TdlibTelegramClient
       var fromMessageId = 0;
       final seenMessageIds = <int>{};
       while (true) {
-        final response = await _gateway.send(
+        final response = await _sendAuthorized(
           td.GetChatHistory(
             chatId: chatId,
             fromMessageId: fromMessageId,
@@ -271,7 +272,7 @@ class TdlibTelegramClient
       var reachedBoundary = false;
 
       while (!reachedBoundary) {
-        final response = await _gateway.send(
+        final response = await _sendAuthorized(
           td.GetChatHistory(
             chatId: chatId,
             fromMessageId: fromMessageId,
@@ -349,7 +350,7 @@ class TdlibTelegramClient
     ];
     for (final chatList in chatLists) {
       for (var batch = 0; batch < 20 && unresolved.isNotEmpty; batch++) {
-        final response = await _gateway.send(
+        final response = await _sendAuthorized(
           td.LoadChats(chatList: chatList, limit: 100),
         );
         await _removeAvailableChats(unresolved);
@@ -374,7 +375,7 @@ class TdlibTelegramClient
   Future<void> _removeAvailableChats(Set<int> unresolved) async {
     for (final chatId in unresolved.toList(growable: false)) {
       try {
-        final chat = await _gateway.send(td.GetChat(chatId: chatId));
+        final chat = await _sendAuthorized(td.GetChat(chatId: chatId));
         final title = chat['title']?.toString().trim() ?? '';
         if (title.isNotEmpty) {
           _chatTitles[chatId] = title;
@@ -390,7 +391,7 @@ class TdlibTelegramClient
 
   @override
   Future<MediaItem> refreshMedia(MediaItem item) async {
-    final response = await _gateway.send(
+    final response = await _sendAuthorized(
       td.GetMessage(chatId: item.chatId, messageId: item.messageId),
     );
     final refreshed = _mediaFromMessage(item.chatId, response);
@@ -411,7 +412,7 @@ class TdlibTelegramClient
     final fileId = target?.fileId ?? item.fileId;
     final limit = localEnd - localStart + 1;
     return _withFileDownloadLock(fileId, () async {
-      final response = await _gateway.send(
+      final response = await _sendAuthorized(
         td.DownloadFile(
           fileId: fileId,
           priority: 32,
@@ -466,7 +467,7 @@ class TdlibTelegramClient
 
   Future<void> _downloadFullFileInBackground(int fileId) async {
     try {
-      await _gateway.send(
+      await _sendAuthorized(
         td.DownloadFile(
           fileId: fileId,
           priority: 32,
@@ -504,7 +505,7 @@ class TdlibTelegramClient
     // Do not serialize this whole-file wait behind the range-read lock. If the
     // user changes songs, clearPlaybackCache must be able to cancel this TDLib
     // download immediately instead of waiting for a large FLAC file to finish.
-    final response = await _gateway.send(
+    final response = await _sendAuthorized(
       td.DownloadFile(
         fileId: fileId,
         priority: 32,
@@ -552,7 +553,7 @@ class TdlibTelegramClient
       await _withFileDownloadLock(fileId, () async {
         _fullDownloadRequests.remove(fileId);
         try {
-          await _gateway.send(
+          await _sendAuthorized(
             td.CancelDownloadFile(
               fileId: fileId,
               onlyIfPending: false,
@@ -564,7 +565,7 @@ class TdlibTelegramClient
           // cached file below is still the important cleanup step.
         }
         try {
-          await _gateway.send(
+          await _sendAuthorized(
             td.DeleteFile(fileId: fileId),
             timeout: const Duration(seconds: 15),
           );
@@ -597,7 +598,7 @@ class TdlibTelegramClient
 
     for (final fileId in activeDownloads) {
       try {
-        await _gateway.send(
+        await _sendAuthorized(
           td.CancelDownloadFile(fileId: fileId, onlyIfPending: false),
           timeout: const Duration(seconds: 10),
         );
@@ -608,7 +609,7 @@ class TdlibTelegramClient
 
     var optimized = false;
     try {
-      await _gateway.send(
+      await _sendAuthorized(
         const td.OptimizeStorage(
           size: 0,
           ttl: 0,
@@ -638,7 +639,7 @@ class TdlibTelegramClient
     for (final fileId in fileIdsToDelete) {
       await _withFileDownloadLock(fileId, () async {
         try {
-          await _gateway.send(
+          await _sendAuthorized(
             td.DeleteFile(fileId: fileId),
             timeout: const Duration(seconds: 15),
           );
@@ -704,7 +705,7 @@ class TdlibTelegramClient
     final probeBytes = min(fileSize, maximumBytes);
 
     return _withFileDownloadLock(fileId, () async {
-      final response = await _gateway.send(
+      final response = await _sendAuthorized(
         td.DownloadFile(
           fileId: fileId,
           priority: 18,
@@ -747,7 +748,7 @@ class TdlibTelegramClient
     if (thumbnailId == null) {
       return null;
     }
-    final response = await _gateway.send(
+    final response = await _sendAuthorized(
       td.DownloadFile(
         fileId: thumbnailId,
         priority: 20,
@@ -791,17 +792,69 @@ class TdlibTelegramClient
     }
   }
 
+  Future<Map<String, dynamic>> _sendAuthorized(
+    td.TdFunction request, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    try {
+      return await _gateway.send(request, timeout: timeout);
+    } on AppException catch (error) {
+      if (!_needsTdlibParameters(error)) {
+        rethrow;
+      }
+      await _recoverTdlibParameters();
+      return _gateway.send(request, timeout: timeout);
+    }
+  }
+
+  bool _needsTdlibParameters(AppException error) {
+    final message = error.message?.toLowerCase() ?? '';
+    return message.contains('initialization parameters are needed') ||
+        message.contains('settdlibparameters');
+  }
+
+  Future<void> _recoverTdlibParameters() async {
+    final pending = _tdlibParameterRecoveryFuture;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+
+    final operation = _refreshTdlibParametersAfterRestart();
+    _tdlibParameterRecoveryFuture = operation;
+    try {
+      await operation;
+    } finally {
+      if (identical(_tdlibParameterRecoveryFuture, operation)) {
+        _tdlibParameterRecoveryFuture = null;
+      }
+    }
+  }
+
+  Future<void> _refreshTdlibParametersAfterRestart() async {
+    final settings = _settings;
+    if (settings == null || !settings.hasTelegramConfiguration) {
+      throw const AppException(AppErrorCode.missingConfiguration);
+    }
+    await _gateway.initialize(tdjsonPath: settings.windowsTdjsonPath);
+    // A completed future belongs to the previous native TDLib initialization
+    // cycle. The recreated client must receive its own parameters.
+    _tdlibParametersFuture = null;
+    await _refreshAuthorizationState();
+  }
+
   Future<void> _refreshAuthorizationState() async {
-    for (var attempt = 0; attempt < 4; attempt++) {
+    for (var attempt = 0; attempt < 40; attempt++) {
       final state = await _gateway.send(const td.GetAuthorizationState());
       final needsRefresh = await _processAuthorizationState(state);
       if (!needsRefresh) {
         return;
       }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     throw const AppException(
       AppErrorCode.telegramInitialization,
-      message: 'Telegram did not finish preparing the sign-in screen. Please try again.',
+      message: 'Telegram did not finish preparing its authorization state. Please try again.',
     );
   }
 
@@ -895,7 +948,7 @@ class TdlibTelegramClient
         systemLanguageCode: 'en',
         deviceModel: _deviceModel(),
         systemVersion: _systemVersion(),
-        applicationVersion: '1.4.34',
+        applicationVersion: '1.4.35',
         enableStorageOptimizer: true,
         ignoreFileNames: false,
       ),
