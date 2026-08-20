@@ -1,3 +1,9 @@
+## [1.4.37] - 2026-08-20
+
+- Fixed TDLib never leaving `authorizationStateWaitTdlibParameters` by bypassing the outdated generated Dart request for initialization and sending only the stable native `setTdlibParameters` JSON fields.
+- Removed the legacy `enable_storage_optimizer` and `ignore_file_names` fields from initialization; newer TDLib versions expose these as options instead of parameter fields.
+- Added a regression assertion for the exact initialization payload while retaining the compatible Windows native runtime and restart recovery.
+
 ## [1.4.36] - 2026-08-20
 
 - Fixed Windows TDLib remaining in `authorizationStateWaitTdlibParameters` by matching the bundled native runtime (`1.8.21.2`) to the app's TDLib 1.8.15 Dart API instead of loading the incompatible 1.8.66 schema.

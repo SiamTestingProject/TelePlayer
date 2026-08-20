@@ -17,6 +17,26 @@ import 'telegram_client.dart';
 
 typedef ApplicationSupportDirectoryProvider = Future<io.Directory> Function();
 
+/// TDLib's initialization request changed after the API snapshot used by the
+/// published Dart binding. Keep this one request limited to the stable fields
+/// accepted by both the bundled native runtime and current TDLib releases.
+class TdlibParametersRequest extends td.TdFunction {
+  TdlibParametersRequest(Map<String, dynamic> parameters)
+      : _parameters = Map<String, dynamic>.unmodifiable(parameters);
+
+  final Map<String, dynamic> _parameters;
+
+  @override
+  String getConstructor() => 'setTdlibParameters';
+
+  @override
+  Map<String, dynamic> toJson([dynamic extra]) => <String, dynamic>{
+        '@type': getConstructor(),
+        ..._parameters,
+        '@extra': extra,
+      };
+}
+
 class TdlibTelegramClient
     implements
         TelegramClient,
@@ -934,24 +954,22 @@ class TdlibTelegramClient
     await databaseDir.create(recursive: true);
     await filesDir.create(recursive: true);
     await _gateway.send(
-      td.SetTdlibParameters(
-        useTestDc: false,
-        databaseDirectory: databaseDir.path,
-        filesDirectory: filesDir.path,
-        databaseEncryptionKey: settings.apiHash ?? '',
-        useFileDatabase: true,
-        useChatInfoDatabase: true,
-        useMessageDatabase: true,
-        useSecretChats: false,
-        apiId: settings.apiId!,
-        apiHash: settings.apiHash!,
-        systemLanguageCode: 'en',
-        deviceModel: _deviceModel(),
-        systemVersion: _systemVersion(),
-        applicationVersion: '1.4.36',
-        enableStorageOptimizer: true,
-        ignoreFileNames: false,
-      ),
+      TdlibParametersRequest(<String, dynamic>{
+        'use_test_dc': false,
+        'database_directory': databaseDir.path,
+        'files_directory': filesDir.path,
+        'database_encryption_key': settings.apiHash ?? '',
+        'use_file_database': true,
+        'use_chat_info_database': true,
+        'use_message_database': true,
+        'use_secret_chats': false,
+        'api_id': settings.apiId!,
+        'api_hash': settings.apiHash!,
+        'system_language_code': 'en',
+        'device_model': _deviceModel(),
+        'system_version': _systemVersion(),
+        'application_version': '1.4.37',
+      }),
     );
   }
 

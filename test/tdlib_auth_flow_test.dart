@@ -133,6 +133,14 @@ void main() {
         'getAuthorizationState',
       ],
     );
+    final parametersRequest = gateway.requests.singleWhere(
+      (request) => request.getConstructor() == 'setTdlibParameters',
+    );
+    final parametersJson = parametersRequest.toJson();
+    expect(parametersJson['api_id'], _configuredSettings.apiId);
+    expect(parametersJson['api_hash'], _configuredSettings.apiHash);
+    expect(parametersJson, isNot(contains('enable_storage_optimizer')));
+    expect(parametersJson, isNot(contains('ignore_file_names')));
     expect(steps, isNotEmpty);
     expect(steps.last.kind, AuthStepKind.needsPhone);
   });
@@ -669,6 +677,7 @@ class _FakeTdlibGateway extends TdlibGateway {
 
   final _updates = StreamController<Map<String, dynamic>>.broadcast();
   final requestTypes = <String>[];
+  final requests = <td.TdFunction>[];
   final List<Map<String, dynamic>> _authorizationStates;
   final AppException? requestError;
   final FutureOr<Map<String, dynamic>> Function(td.TdFunction request)?
@@ -694,6 +703,7 @@ class _FakeTdlibGateway extends TdlibGateway {
   }) async {
     final type = request.getConstructor();
     requestTypes.add(type);
+    requests.add(request);
     if (type != 'getAuthorizationState' && requestError != null) {
       throw requestError!;
     }
