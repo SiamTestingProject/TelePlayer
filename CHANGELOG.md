@@ -3,6 +3,7 @@
 - Fixed local `flutter run -d windows` builds launching without TDLib by adding an automatic post-build step that places `tdjson.dll` and its required Visual C++ runtime files beside the Debug or Release executable.
 - Repeated Windows builds now skip the TDLib network download when a complete runtime is already present, keeping local runs and release packaging fast.
 - A stale custom TDLib path in Settings no longer hides a valid DLL bundled beside TelePlayer.
+- Cleared the remaining fatal-info diagnostics in the Windows TDLib fallback test and raised the build number to 57.
 
 ## [1.4.33] - 2026-08-20
 

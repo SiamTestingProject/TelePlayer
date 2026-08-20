@@ -34,8 +34,8 @@ void main() {
   test('ignores a stale Windows TDLib setting when a bundled DLL exists', () {
     final separator = Platform.pathSeparator;
     final appDirectory = '${Directory.systemTemp.path}${separator}TelePlayer';
-    final executablePath = '${appDirectory}${separator}teleplayer.exe';
-    final bundledPath = '${appDirectory}${separator}tdjson.dll';
+    final executablePath = '$appDirectory${separator}teleplayer.exe';
+    final bundledPath = '$appDirectory${separator}tdjson.dll';
     expect(
       resolveTdjsonLibraryPath(
         configuredPath: r'C:\Old\missing-tdjson.dll',
